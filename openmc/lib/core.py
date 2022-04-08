@@ -95,8 +95,10 @@ _dll.openmc_global_bounding_box.argtypes = [POINTER(c_double),
                                             POINTER(c_double)]
 _dll.openmc_global_bounding_box.restype = c_int
 _dll.openmc_global_bounding_box.errcheck = _error_handler
-
-
+_dll._ZN6openmc17read_geometry_xmlEv.restype = None
+_dll._ZN6openmc20free_memory_geometryEv.restype = None
+_dll._ZN6openmc20free_memory_surfacesEv.restype = None
+_dll._ZN6openmc17finalize_geometryEv.restype = None
 def global_bounding_box():
     """Calculate a global bounding box for the model"""
     inf = sys.float_info.max
@@ -296,6 +298,12 @@ def is_statepoint_batch():
     """
     return _dll.openmc_is_statepoint_batch()
 
+def init_geom():
+    _dll._ZN6openmc20free_memory_geometryEv()
+    _dll._ZN6openmc20free_memory_surfacesEv()
+    _dll._ZN6openmc17read_geometry_xmlEv()
+    _dll._ZN6openmc17finalize_geometryEv()
+    #_dll.finalize_geometry()
 
 def iter_batches():
     """Iterator over batches.

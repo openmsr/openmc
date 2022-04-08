@@ -18,6 +18,7 @@ from warnings import warn
 
 from numpy import nonzero, empty, asarray
 from uncertainties import ufloat
+import pandas as pd
 
 from openmc.lib import MaterialFilter, Tally
 from openmc.checkvalue import check_type, check_greater_than
@@ -830,14 +831,15 @@ class Integrator(ABC):
         and modify accordingly if remove_dep_nuc arguments is present """
         x = deepcopy(bos_conc)
         # Do batch-wise change to the nuclide concentrations
+        diff = 0
         if step_index > 0 and self.operator.remove_dep_nuc is not None:
             x = self.operator.get_mod_nuc(x)
         # Other option, do a k_search in between
         if step_index > 0 and self.operator.k_search is not None:
-            x = self.operator.make_k_search(x)
+            x, diff = self.operator.make_k_search(x,step_index)
         res = self.operator(x, source_rate)
         self.operator.write_bos_data(step_index + self._i_res)
-        return x, res
+        return x, res, diff
 
     def _get_bos_data_from_restart(self, step_index, source_rate, bos_conc):
         """Get beginning of step concentrations, reaction rates from restart"""
@@ -870,11 +872,11 @@ class Integrator(ABC):
         """
         with self.operator as conc:
             t, self._i_res = self._get_start_data()
-
+            diff_list=[]
             for i, (dt, source_rate) in enumerate(self):
                 # Solve transport equation (or obtain result from restart)
                 if i > 0 or self.operator.prev_res is None:
-                    conc, res = self._get_bos_data_from_operator(i, source_rate, conc)
+                    conc, res, diff = self._get_bos_data_from_operator(i, source_rate, conc)
                 else:
                     conc, res = self._get_bos_data_from_restart(i, source_rate, conc)
 
@@ -890,6 +892,11 @@ class Integrator(ABC):
 
                 Results.save(self.operator, conc_list, res_list, [t, t + dt],
                              source_rate, self._i_res + i, proc_time)
+
+                diff_list.append(diff)
+
+                #Overwrite every time
+                pd.DataFrame(diff_list).to_csv("diff.csv")
 
                 t += dt
 

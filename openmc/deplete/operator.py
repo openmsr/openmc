@@ -397,6 +397,8 @@ class Operator(TransportOperator):
         self._yield_helper.update_tally_nuclides(nuclides)
 
         # Run OpenMC
+        if self.k_search is not None and "surf_id" in self.k_search.keys():
+            openmc.lib.init_geom() #init_geom defined in core.py
         openmc.lib.run()
         openmc.lib.reset_timers()
 
@@ -493,7 +495,7 @@ class Operator(TransportOperator):
 
         return burnable_mats, volume, nuclides
 
-    def make_k_search(self, x):
+    def make_k_search(self, x, step_index):
         """Perform a search_for_keff in between depletion iterations.
 
         If k_search attribute is defined and passed to the operator class,
@@ -504,27 +506,24 @@ class Operator(TransportOperator):
         ---------
         x : list of float
             Nuclides concentration from previous iteration
-
+        step_index: int
+            Depletion step index
         Returns
         -------
         x : list
             Nuclides concentration after search_for_keff
 
         """
-        fissile = self.k_search['fissile']
-        mat_id = self.k_search['mat_id']
         exclude = self.k_search['exclude']
         tol = self.k_search['tol']
+        target = self.k_search['target']
+        # create a copy model instance
+        copy_model = deepcopy(self.model)
 
         # Get dep. mat ids and nuclides from previous result file
         volume_dict, nucs, burns, full_burns =  self.get_results_info()
 
-        #Check if mat_id is a valid depletable material id
-        if str(mat_id) not in volume_dict.keys():
-            msg = (f'Mat_id: {mat_id} is not a valid depletable material id')
-            raise Exception(msg)
-
-        #create list of dicts of atom densities for each dep. mat.
+        #create list of dicts of atom densities for each dep. mat. from previous step conc. vector (x)
         list_of_dict = []
         for m, (id,vol) in enumerate(volume_dict.items()):
             dict = {}
@@ -533,58 +532,197 @@ class Operator(TransportOperator):
                 dict[nuc] = x[m][i]  / vol * 1.e-24
             list_of_dict.append(dict)
 
-            #store parametric material index
-            if id == str(mat_id):
-                param_index = m
-                # check if fissile nuclide is in the dictionary
-                if dict[fissile] == 0:
-                    msg = (f'Material {id} does not contain {fissile}')
+        # Initialize and perform k_eff searching for material
+        if "mat_id" in self.k_search.keys():
+            mat_id = self.k_search['mat_id']
+            mat_comp = self.k_search['mat_comp']
+            #Check if self.k_search['mat_id'] is a valid depletable material id
+            if str(mat_id) not in volume_dict.keys():
+                msg = (f'Mat_id: {mat_id} is not a valid depletable material id')
+                raise Exception(msg)
+
+            def _create_param_mat_model(param):
+                _model = copy_model
+
+                for idx,mat in enumerate(_model.materials):
+
+                    if mat.depletable:
+                        ## add new nuclides in depletable materials
+                        for nuc,val in list_of_dict[idx].items():
+
+                            # Atom density less than limit and nuclides not in cross section library
+                            if nuc not in mat_comp.keys():
+
+                                if val < 1.0e-8 or nuc in exclude:
+                                     _model.materials[idx].remove_nuclide(nuc)
+                                else:
+                                    _model.materials[idx].remove_nuclide(nuc)
+                                    _model.materials[idx].add_nuclide(nuc,val)
+
+                            else:
+
+                                if mat.id == int(mat_id):
+                                    _model.materials[idx].remove_nuclide(nuc)
+                                    _model.materials[idx].add_nuclide(nuc,val+param*mat_comp[nuc])
+                                else:
+                                    _model.materials[idx].remove_nuclide(nuc)
+                                    _model.materials[idx].add_nuclide(nuc,val)
+
+                        _model.materials[idx].set_density('sum')
+
+                _model.export_to_xml()
+                return _model
+
+            # Initialize and perform k_eff searching
+            res, guess, k = openmc.search_for_keff(_create_param_mat_model, initial_guess=0, #bracket=[guess_val/2,guess_val*3],
+                                                tol=tol, target=target, print_iterations=True)
+
+            #Initialize dict of concentration variation of parametric material
+            diff = {}
+
+            # Re-convert atom densities result from k_eff search into number of atoms and update x vector
+            for m, (id,vol) in enumerate(volume_dict.items()):
+                for i,nuc in enumerate(nucs):
+                        #the self.k_search['fissile'] nuclide atom density is the only change
+                        if nuc in mat_comp.keys() and id == str(mat_id):
+                            # convert atom densities (atom/b-cm) into number of atoms
+                            diff[nuc] = x[m][i] - (res * mat_comp[nuc] * vol / 1.e-24)
+                            x[m][i] += res * mat_comp[nuc] * vol / 1.e-24
+                        else:
+                            continue
+        # Initialize and perform k_eff searching for geometry
+        elif "surf_id" in self.k_search.keys():
+            surf_id = self.k_search['surf_id']
+            range = self.k_search['range']
+            bracketed_method = self.k_search['bracketed_method']
+
+            # get search_for_keff guess parameter from previous step
+            for surf in self.geometry.get_all_surfaces().items():
+                    if surf[1].id == surf_id:
+                        keys = list(surf[1].coefficients.keys())
+                        if len(keys) == 1:
+                            guess = getattr(surf[1],keys[0])
+                        else:
+                            msg = (f'Surface coefficients {keys} are not one. Ambigous')
+                            raise Exception(msg)
+
+            # define param function
+            def _create_param_geom_model(param):
+                _model = copy_model
+                #find parametric surface and recreate it parametric
+                for surf in _model.geometry.get_all_surfaces().items():
+                    if surf[1].id == surf_id:
+                        keys = list(surf[1].coefficients.keys())
+                        if len(keys) == 1:
+                            setattr(surf[1],keys[0],param)
+                        else:
+                            msg = (f'Surface coefficients {keys} are not one. Ambigous')
+                            raise Exception(msg)
+
+                for idx,mat in enumerate(_model.materials):
+
+                    if mat.depletable:
+                        # remove all nuclides in depletable materials
+                        for nuc in mat.get_nuclides():
+                            _model.materials[idx].remove_nuclide(nuc)
+                        # add new nuclides in depletable materials
+                        for nuc,val in list_of_dict[idx].items():
+                            # Atom density less than limit and nuclides not in cross section library
+                            if val > 1.0e-25 and nuc not in exclude:
+                                _model.materials[idx].add_nuclide(nuc,val)
+                        _model.materials[idx].set_density('sum')
+
+                _model.export_to_xml()
+                return _model
+
+            # Initialize search_for_keff iterative method
+            res = None
+            lower_range = range[0]
+            upper_range = range[1]
+
+            #normalize Tolerance for search_for_keff
+            if guess == 0.0:
+                tolerance = tol
+            else:
+                tolerance = abs(tol/guess)
+
+            while res==None:
+                # Check if upper limit reached at beginning of every step
+                if guess + upper_range > range[2]:
+                    msg = (f'Upper limit reached, stopping depletion.')
+                    raise Exception(msg)
+                # do search for keff
+                search = openmc.search_for_keff(_create_param_geom_model,bracket=[guess+lower_range,guess+upper_range], #initial_guess=guess,
+                                        tol=tolerance,bracketed_method=bracketed_method, target=target,print_iterations=True)
+                # if no erros search algorithm return 3 values, store res and proceed
+                if len(search) == 3:
+                    res, guesses, k = search
+
+                # otherwise, search algorithm return 2 values
+                elif len(search) == 2:
+                    print ("Invalid range")
+                    guesses, k = search
+
+                    # If the bracket range is below the target
+                    if np.array(k).prod() < target:
+
+                        # If k is close enought to target (below 0.2%), let's not complicate too much and get directly that value
+                        if (target - np.array(k).max()) < 0.002:
+                            res =  np.array(k).max()
+
+                        # Let's restric the bracket range in a clever way
+                        else:
+                            if (target - np.array(k).prod()) <= 0.02:
+                                lower_range = upper_range - 2
+                                upper_range += abs(range[1])
+                            elif 0.02 < (target - np.array(k).prod()) < 0.03:
+                                lower_range = upper_range - 1
+                                upper_range += abs(range[1])*2
+                            else:
+                                lower_range = upper_range - 0.5
+                                upper_range += abs(range[1])*3
+
+                    # If the bracket is above the target
+                    else:
+
+                        # If k is close enought to target, let's not complicate too much and get directly that value
+                        if (np.array(k).min() -target)  < 0.002:
+                            res = np.array(k).min()
+
+                        # Let's restric the bracket range in a clever way
+                        else:
+                            upper_range = lower_range + 1 # same as above
+                            lower_range -= abs(range[0])
+
+                else:
+                    msg = (f'search_for_keff output not contemplated')
                     raise Exception(msg)
 
-        # create a copy model instance
-        copy_model = deepcopy(self.model)
+            # Plotting option, with renaming
+            if 'plot' in self.k_search.keys():
+                openmc.plot_geometry(output=False)
+                for plot in os.listdir(os.getcwd()):
+                    if plot.endswith('.ppm'):
+                        os.rename(plot, '_'.join([plot.split('.ppm')[0],str(step_index),'.ppm']))
 
-        # define parametric model for k_search algorithm
-        def _create_param_model(param):
-            _model = copy_model
-
-            for idx,mat in enumerate(_model.materials):
-
-                if mat.depletable:
-                    # remove all nuclides in depletable materials
-                    for nuc in mat.get_nuclides():
-                        _model.materials[idx].remove_nuclide(nuc)
-                    # add new nuclides in depletable materials
-                    for nuc,val in list_of_dict[idx].items():
-                        # Atom density less than limit and nuclides not in cross section library
-                        if nuc != fissile and val > 1.0e-8 and nuc not in exclude:
-                            _model.materials[idx].add_nuclide(nuc,val)
-                        # the fissile nuclide is added as parameteric
-                        elif nuc == fissile and mat.id == int(mat_id):
-                            _model.materials[idx].add_nuclide(fissile,param)
-                        # only in one material
-                        elif nuc == fissile and val > 1.0e-8 and mat.id != int(mat_id):
-                            _model.materials[idx].add_nuclide(nuc,val)
-                    _model.materials[idx].set_density('sum')
-
-            _model.export_to_xml()
-            return _model
-
-        # Initialize and perform k_eff searching
-        guess_val  = list_of_dict[param_index][fissile]
-        res, guess, k = openmc.search_for_keff(_create_param_model, initial_guess=guess_val, #bracket=[guess_val/2,guess_val*3],
-                                            tol=tol, print_iterations=True)
-
-        # Re-convert atom densities result from k_eff search into number of atoms and update x vector
-        for m, (id,vol) in enumerate(volume_dict.items()):
-            for i,nuc in enumerate(nucs):
-                    #the fissile nuclide atom density is the only change
-                    if nuc == fissile and id == str(mat_id):
-                        # convert atom densities (atom/b-cm) into number of atoms
-                        x[m][i] = res  * vol / 1.e-24
+            # Set optimized output param back to the default model
+            for surf in self.geometry.get_all_surfaces().items():
+                if surf[1].id == surf_id:
+                    keys = list(surf[1].coefficients.keys())
+                    if len(keys) == 1:
+                        setattr(surf[1],keys[0],res)
                     else:
-                        continue
-        return x
+                        msg = (f'Surface coefficients {keys} are not one. Ambigous')
+                        raise Exception(msg)
+            # Store difference
+            print(f'res: {res}, guess: {guess}')
+            diff= res - guess
+
+        else:
+            msg = (f'keff_search depletion Keys are not recognized')
+            raise Exception(msg)
+
+        return x, diff
 
     def _extract_number(self, local_mats, volume, nuclides, remove_nuc, prev_res=None):
         """Construct AtomNumber using geometry
@@ -694,8 +832,8 @@ class Operator(TransportOperator):
         volume_dict, nucs, burns, full_burns  = self.get_results_info()
         # Iterate list of dicts
         for item in self.remove_dep_nuc:
-            # find mat_id index
-            m = [idx for idx, mat in enumerate(volume_dict.keys()) if mat == item['mat_id']][0]
+            # find self.k_search['mat_id'] index
+            m = [idx for idx, mat in enumerate(volume_dict.keys()) if mat == str(item['mat_id'])][0]
             # Iterate all nuclides in depletable materials
             for i,nuc in enumerate(nucs):
                 # nuclide can either match itsel or the element they correspond, depending on the assignment
@@ -707,7 +845,7 @@ class Operator(TransportOperator):
                     # Swap nuclide from one material to another
                     elif item['action'] == 'add':
                         # find index of material from which to add
-                        a = [idx for idx, mat in enumerate(volume_dict.keys()) if mat == item['from']][0]
+                        a = [idx for idx, mat in enumerate(volume_dict.keys()) if mat == str(item['from'])][0]
                         x[m][i] += x[a][i] * item['efficiency'] / 100
                         x[a][i] -= x[a][i] * item['efficiency'] / 100
                         x[a][i] += 1.0e3
