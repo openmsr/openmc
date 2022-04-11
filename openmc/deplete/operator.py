@@ -668,7 +668,8 @@ class Operator(TransportOperator):
 
                         # If k is close enought to target (below 0.2%), let's not complicate too much and get directly that value
                         if (target - np.array(k).max()) < 0.002:
-                            res =  np.array(k).max()
+                            index = [idx for idx,i in enumerate(k) if i == np.array(k).max()][0]
+                            res =  guesses[index]
 
                         # Let's restric the bracket range in a clever way
                         else:
@@ -687,7 +688,8 @@ class Operator(TransportOperator):
 
                         # If k is close enought to target, let's not complicate too much and get directly that value
                         if (np.array(k).min() -target)  < 0.002:
-                            res = np.array(k).min()
+                            index = [idx for idx,i in enumerate(k) if i == np.array(k).min()][0]
+                            res = guesses[index]
 
                         # Let's restric the bracket range in a clever way
                         else:
