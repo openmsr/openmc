@@ -641,7 +641,7 @@ class Operator(TransportOperator):
             upper_range = range[1]
 
             #normalize Tolerance for search_for_keff
-            if guess == 0.0:
+            if -1.0 < guess < 1.0:
                 tolerance = tol
             else:
                 tolerance = abs(tol/guess)
@@ -675,13 +675,11 @@ class Operator(TransportOperator):
                         else:
                             if (target - np.array(k).prod()) <= 0.02:
                                 lower_range = upper_range - 2
-                                upper_range += abs(range[1])
                             elif 0.02 < (target - np.array(k).prod()) < 0.03:
                                 lower_range = upper_range - 1
-                                upper_range += abs(range[1])*2
                             else:
                                 lower_range = upper_range - 0.5
-                                upper_range += abs(range[1])*3
+                            upper_range += abs(range[1])
 
                     # If the bracket is above the target
                     else:
