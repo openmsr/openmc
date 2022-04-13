@@ -642,7 +642,7 @@ class Operator(TransportOperator):
 
             #normalize Tolerance for search_for_keff
             if -1.0 < guess < 1.0:
-                tolerance = tol
+                tolerance = tol/2
             else:
                 tolerance = abs(tol/guess)
 
