@@ -399,7 +399,7 @@ class Operator(TransportOperator):
         # Run OpenMC
         if self.k_search is not None and "surf_id" in self.k_search.keys():
             openmc.lib.init_geom() #init_geom defined in core.py
-        openmc.lib.run()
+        openmc.lib.run(output=False)
         openmc.lib.reset_timers()
 
         # Extract results
@@ -532,10 +532,8 @@ class Operator(TransportOperator):
                 dict[nuc] = x[m][i]  / vol * 1.e-24
             list_of_dict.append(dict)
 
-        # Initialize and perform k_eff searching for material
-        if "mat_id" in self.k_search.keys():
-            mat_id = self.k_search['mat_id']
-            mat_comp = self.k_search['mat_comp']
+
+        def mat_k_search(x,mat_id,mat_comp,exclude,tol,target,copy_model,volume_dict,nucs,list_of_dict,*args):
             #Check if self.k_search['mat_id'] is a valid depletable material id
             if str(mat_id) not in volume_dict.keys():
                 msg = (f'Mat_id: {mat_id} is not a valid depletable material id')
@@ -543,6 +541,19 @@ class Operator(TransportOperator):
 
             def _create_param_mat_model(param):
                 _model = copy_model
+
+                if args: #this is in case of refueling, we need to modify the geometry before performing the parametrization
+                    surf_id = args[0]
+                    res = args[1]
+                    # Set optimized output param back to the default model
+                    for surf in _model.geometry.get_all_surfaces().items():
+                        if surf[1].id == surf_id:
+                            keys = list(surf[1].coefficients.keys())
+                            if len(keys) == 1:
+                                setattr(surf[1],keys[0],res)
+                            else:
+                                msg = (f'Surface coefficients {keys} are not one. Ambigous')
+                                raise Exception(msg)
 
                 for idx,mat in enumerate(_model.materials):
 
@@ -590,12 +601,9 @@ class Operator(TransportOperator):
                             x[m][i] += res * mat_comp[nuc] * vol / 1.e-24
                         else:
                             continue
-        # Initialize and perform k_eff searching for geometry
-        elif "surf_id" in self.k_search.keys():
-            surf_id = self.k_search['surf_id']
-            range = self.k_search['range']
-            bracketed_method = self.k_search['bracketed_method']
+            return x, diff
 
+        def geom_k_search(x,surf_id,range,bracketed_method,init_param,exclude,tol,target,copy_model,volume_dict,nucs,list_of_dict):
             # get search_for_keff guess parameter from previous step
             for surf in self.geometry.get_all_surfaces().items():
                     if surf[1].id == surf_id:
@@ -649,8 +657,16 @@ class Operator(TransportOperator):
             while res==None:
                 # Check if upper limit reached at beginning of every step
                 if guess + upper_range > range[2]:
-                    msg = (f'Upper limit reached, stopping depletion.')
-                    raise Exception(msg)
+                    msg = (f'Upper limit reached, stopping depletion')
+                    msg2 = (f'Upper limit reached, refueling...')
+
+                    if self.k_search['refuel']:
+                        print(msg2)
+                        res = init_param
+                        break #exit the while loop
+                    else:
+                        raise Exception(msg)
+
                 # do search for keff
                 search = openmc.search_for_keff(_create_param_geom_model,bracket=[guess+lower_range,guess+upper_range], #initial_guess=guess,
                                         tol=tolerance,bracketed_method=bracketed_method, target=target,print_iterations=True)
@@ -718,6 +734,26 @@ class Operator(TransportOperator):
             print(f'res: {res}, guess: {guess}')
             diff= res - guess
 
+            if res == init_param: #this means we have reset the initial level -- > refueling
+                refuel = self.k_search['refuel']
+                mat_id = refuel['mat_id']
+                mat_comp = refuel['mat_comp']
+                tol = refuel['tol']
+                x, diff_mat = mat_k_search(x,mat_id,mat_comp,exclude,tol,target,copy_model,volume_dict,nucs,list_of_dict,surf_id,res)
+
+            return x, diff
+
+        if "mat_id" in self.k_search.keys():
+            mat_id = self.k_search['mat_id']
+            mat_comp = self.k_search['mat_comp']
+            x, diff = mat_k_search(x,mat_id,mat_comp,exclude,tol,target,copy_model,volume_dict,nucs,list_of_dict)
+        # Initialize and perform k_eff searching for geometry
+        elif "surf_id" in self.k_search.keys():
+            surf_id = self.k_search['surf_id']
+            range = self.k_search['range']
+            bracketed_method = self.k_search['bracketed_method']
+            init_param = self.k_search['init_param']
+            x, diff = geom_k_search(x,surf_id,range,bracketed_method,init_param,exclude,tol,target,copy_model,volume_dict,nucs,list_of_dict)
         else:
             msg = (f'keff_search depletion Keys are not recognized')
             raise Exception(msg)
