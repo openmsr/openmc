@@ -533,7 +533,7 @@ class Operator(TransportOperator):
             list_of_dict.append(dict)
 
 
-        def mat_k_search(x,mat_id,mat_comp,exclude,tol,target,copy_model,volume_dict,nucs,list_of_dict,*args):
+        def mat_k_search(x,mat_id,range,bracketed_method,mat_comp,exclude,tol,target,copy_model,volume_dict,nucs,list_of_dict,*args):
             #Check if self.k_search['mat_id'] is a valid depletable material id
             if str(mat_id) not in volume_dict.keys():
                 msg = (f'Mat_id: {mat_id} is not a valid depletable material id')
@@ -561,9 +561,8 @@ class Operator(TransportOperator):
                         ## add new nuclides in depletable materials
                         for nuc,val in list_of_dict[idx].items():
 
-                            # Atom density less than limit and nuclides not in cross section library
                             if nuc not in mat_comp.keys():
-
+                                # Atom density less than limit and nuclides not in cross section library
                                 if val < 1.0e-8 or nuc in exclude:
                                      _model.materials[idx].remove_nuclide(nuc)
                                 else:
@@ -585,8 +584,53 @@ class Operator(TransportOperator):
                 return _model
 
             # Initialize and perform k_eff searching
-            res, guess, k = openmc.search_for_keff(_create_param_mat_model, initial_guess=0, #bracket=[guess_val/2,guess_val*3],
-                                                tol=tol, target=target, print_iterations=True)
+            res = None
+            lower_range = range[0]
+            upper_range = range[1]
+            while res==None:
+                search = openmc.search_for_keff(_create_param_mat_model, bracket=[lower_range,upper_range],
+                                        tol=tol, bracketed_method=bracketed_method, target=target, print_iterations=True)
+                # if no erros search algorithm return 3 values, store res and proceed
+                if len(search) == 3:
+                    res, guesses, k = search
+
+                # otherwise, search algorithm return 2 values
+                elif len(search) == 2:
+                    print ("Invalid range")
+                    guesses, k = search
+
+                    # If the bracket range is below the target
+                    if np.array(k).prod() < target:
+
+                        # If k is close enought to target (below 0.2%), let's not complicate too much and get directly that value
+                        if (target - np.array(k).max()) < 0.002:
+                            index = [idx for idx,i in enumerate(k) if i == np.array(k).max()][0]
+                            res =  guesses[index]
+
+                        # Let's restric the bracket range in a clever way
+                        else:
+                            lower_range = upper_range
+                            upper_range *= 5
+
+                    # If the bracket is above the target
+                    else:
+
+                        # If k is close enought to target, let's not complicate too much and get directly that value
+                        if (np.array(k).min() -target)  < 0.002:
+                            index = [idx for idx,i in enumerate(k) if i == np.array(k).min()][0]
+                            res = guesses[index]
+
+                        # Let's restric the bracket range in a clever way
+                        else:
+                            upper_range = lower_range
+                            lower_range /= 5
+
+                else:
+                    msg = (f'search_for_keff output not contemplated')
+                    raise Exception(msg)
+
+
+
 
             #Initialize dict of concentration variation of parametric material
             diff = {}
@@ -636,7 +680,7 @@ class Operator(TransportOperator):
                         # add new nuclides in depletable materials
                         for nuc,val in list_of_dict[idx].items():
                             # Atom density less than limit and nuclides not in cross section library
-                            if val > 1.0e-25 and nuc not in exclude:
+                            if val > 1.0e-8 and nuc not in exclude:
                                 _model.materials[idx].add_nuclide(nuc,val)
                         _model.materials[idx].set_density('sum')
 
@@ -736,17 +780,21 @@ class Operator(TransportOperator):
 
             if res == init_param: #this means we have reset the initial level -- > refueling
                 refuel = self.k_search['refuel']
+                range = refuel['range']
+                bracketed_method = refuel['bracketed_method']
                 mat_id = refuel['mat_id']
                 mat_comp = refuel['mat_comp']
                 tol = refuel['tol']
-                x, diff_mat = mat_k_search(x,mat_id,mat_comp,exclude,tol,target,copy_model,volume_dict,nucs,list_of_dict,surf_id,res)
+                x, diff_mat = mat_k_search(x,mat_id,range,bracketed_method,mat_comp,exclude,tol,target,copy_model,volume_dict,nucs,list_of_dict,surf_id,res)
 
             return x, diff
 
         if "mat_id" in self.k_search.keys():
             mat_id = self.k_search['mat_id']
+            range = self.k_search['range']
+            bracketed_method = self.k_search['bracketed_method']
             mat_comp = self.k_search['mat_comp']
-            x, diff = mat_k_search(x,mat_id,mat_comp,exclude,tol,target,copy_model,volume_dict,nucs,list_of_dict)
+            x, diff = mat_k_search(x,mat_id,range,bracketed_method,mat_comp,exclude,tol,target,copy_model,volume_dict,nucs,list_of_dict)
         # Initialize and perform k_eff searching for geometry
         elif "surf_id" in self.k_search.keys():
             surf_id = self.k_search['surf_id']
