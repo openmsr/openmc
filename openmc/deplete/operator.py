@@ -517,6 +517,7 @@ class Operator(TransportOperator):
         exclude = self.k_search['exclude']
         tol = self.k_search['tol']
         target = self.k_search['target']
+        density_limit = self.k_search['density_limit']
         # create a copy model instance
         copy_model = deepcopy(self.model)
 
@@ -533,7 +534,7 @@ class Operator(TransportOperator):
             list_of_dict.append(dict)
 
 
-        def mat_k_search(x,mat_id,range,bracketed_method,mat_comp,exclude,tol,target,copy_model,volume_dict,nucs,list_of_dict,*args):
+        def mat_k_search(x,mat_id,range,bracketed_method,mat_comp,exclude,tol,target,density_limit,copy_model,volume_dict,nucs,list_of_dict,*args):
             #Check if self.k_search['mat_id'] is a valid depletable material id
             if str(mat_id) not in volume_dict.keys():
                 msg = (f'Mat_id: {mat_id} is not a valid depletable material id')
@@ -563,7 +564,7 @@ class Operator(TransportOperator):
 
                             if nuc not in mat_comp.keys():
                                 # Atom density less than limit and nuclides not in cross section library
-                                if val < 1.0e-8 or nuc in exclude:
+                                if val < density_limit or nuc in exclude:
                                      _model.materials[idx].remove_nuclide(nuc)
                                 else:
                                     _model.materials[idx].remove_nuclide(nuc)
@@ -647,7 +648,7 @@ class Operator(TransportOperator):
                             continue
             return x, diff
 
-        def geom_k_search(x,surf_id,range,bracketed_method,init_param,exclude,tol,target,copy_model,volume_dict,nucs,list_of_dict):
+        def geom_k_search(x,surf_id,range,bracketed_method,init_param,exclude,tol,target,density_limit,copy_model,volume_dict,nucs,list_of_dict):
             # get search_for_keff guess parameter from previous step
             for surf in self.geometry.get_all_surfaces().items():
                     if surf[1].id == surf_id:
@@ -680,7 +681,7 @@ class Operator(TransportOperator):
                         # add new nuclides in depletable materials
                         for nuc,val in list_of_dict[idx].items():
                             # Atom density less than limit and nuclides not in cross section library
-                            if val > 1.0e-8 and nuc not in exclude:
+                            if val > density_limit and nuc not in exclude:
                                 _model.materials[idx].add_nuclide(nuc,val)
                         _model.materials[idx].set_density('sum')
 
@@ -794,14 +795,14 @@ class Operator(TransportOperator):
             range = self.k_search['range']
             bracketed_method = self.k_search['bracketed_method']
             mat_comp = self.k_search['mat_comp']
-            x, diff = mat_k_search(x,mat_id,range,bracketed_method,mat_comp,exclude,tol,target,copy_model,volume_dict,nucs,list_of_dict)
+            x, diff = mat_k_search(x,mat_id,range,bracketed_method,mat_comp,exclude,tol,target,density_limit,copy_model,volume_dict,nucs,list_of_dict)
         # Initialize and perform k_eff searching for geometry
         elif "surf_id" in self.k_search.keys():
             surf_id = self.k_search['surf_id']
             range = self.k_search['range']
             bracketed_method = self.k_search['bracketed_method']
             init_param = self.k_search['init_param']
-            x, diff = geom_k_search(x,surf_id,range,bracketed_method,init_param,exclude,tol,target,copy_model,volume_dict,nucs,list_of_dict)
+            x, diff = geom_k_search(x,surf_id,range,bracketed_method,init_param,exclude,tol,target,density_limit,copy_model,volume_dict,nucs,list_of_dict)
         else:
             msg = (f'keff_search depletion Keys are not recognized')
             raise Exception(msg)
