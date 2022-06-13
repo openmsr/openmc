@@ -523,7 +523,6 @@ class Operator(TransportOperator):
 
         # Get dep. mat ids and nuclides from previous result file
         volume_dict, nucs, burns, full_burns =  self.get_results_info()
-
         #create list of dicts of atom densities for each dep. mat. from previous step conc. vector (x)
         list_of_dict = []
         for m, (id,vol) in enumerate(volume_dict.items()):
@@ -786,7 +785,7 @@ class Operator(TransportOperator):
                 mat_id = refuel['mat_id']
                 mat_comp = refuel['mat_comp']
                 tol = refuel['tol']
-                x, diff_mat = mat_k_search(x,mat_id,range,bracketed_method,mat_comp,exclude,tol,target,copy_model,volume_dict,nucs,list_of_dict,surf_id,res)
+                x, diff_mat = mat_k_search(x,mat_id,range,bracketed_method,mat_comp,exclude,tol,target,density_limit,copy_model,volume_dict,nucs,list_of_dict,surf_id,res)
 
             return x, diff
 
