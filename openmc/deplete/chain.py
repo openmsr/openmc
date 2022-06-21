@@ -34,6 +34,8 @@ import openmc.data
 from openmc._xml import clean_indentation
 from .nuclide import Nuclide, DecayTuple, ReactionTuple
 
+import re
+regex = re.compile(r'(\d+|\s+)')
 
 # tuple of (possible MT values, (dA, dZ), secondaries) where dA is the change in
 # the mass number and dZ is the change in the atomic number
@@ -609,7 +611,7 @@ class Chain:
             out[nuc.name] = dict(yield_obj)
         return out
 
-    def form_matrix(self, rates, fission_yields=None):
+    def form_matrix(self, rates, eql0d, fission_yields=None):
         """Forms depletion matrix.
 
         Parameters
@@ -632,12 +634,13 @@ class Chain:
         :meth:`get_default_fission_yields`
         """
         matrix = defaultdict(float)
+        offdiag_matrix = defaultdict(float)
         reactions = set()
-
         if fission_yields is None:
             fission_yields = self.get_default_fission_yields()
 
         for i, nuc in enumerate(self.nuclides):
+
             # Loss from radioactive decay
             if nuc.half_life is not None:
                 decay_constant = math.log(2) / nuc.half_life
@@ -655,11 +658,26 @@ class Chain:
                             k = self.nuclide_dict[target]
                             matrix[k, i] += branch_val
 
+            # Loss/gain from transfer
+            if eql0d[1] is not None:
+                # Diagonal matrix
+                if eql0d[0][0] == eql0d[0][1]:
+                    for group in eql0d[1]:
+                        if regex.split(nuc.name)[0] in group['element']:
+                            coefficient = - 1 / group['cycle_time'] * group['efficiency']
+                            matrix [i, i] += coefficient
+                # Off-diagonal matrix
+                else:
+                    if regex.split(nuc.name)[0] in eql0d[1]['element']:
+                        coefficient = 1 / eql0d[1]['cycle_time'] * eql0d[1]['efficiency']
+                        offdiag_matrix[i, i] += coefficient
+                    else:
+                        offdiag_matrix[i, i] += 0.0
+
             if nuc.name in rates.index_nuc:
                 # Extract all reactions for this nuclide in this cell
                 nuc_ind = rates.index_nuc[nuc.name]
                 nuc_rates = rates[nuc_ind, :]
-
                 for r_type, target, _, br in nuc.reactions:
                     # Extract reaction index, and then final reaction rate
                     r_id = rates.index_rx[r_type]
@@ -699,7 +717,10 @@ class Chain:
         # Use DOK matrix as intermediate representation, then convert to CSR and return
         n = len(self)
         matrix_dok = sp.dok_matrix((n, n))
-        dict.update(matrix_dok, matrix)
+        if len(offdiag_matrix) == 0:
+            dict.update(matrix_dok, matrix)
+        else:
+            dict.update(matrix_dok, offdiag_matrix)
         return matrix_dok.tocsr()
 
     def get_branch_ratios(self, reaction="(n,gamma)"):

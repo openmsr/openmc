@@ -778,7 +778,7 @@ class Integrator(ABC):
     def _timed_deplete(self, concs, rates, dt, matrix_func=None):
         start = time.time()
         results = deplete(
-            self._solver, self.chain, concs, rates, dt, matrix_func)
+            self._solver, self.chain, concs, rates, dt, self.operator.eql0d, matrix_func)
         return time.time() - start, results
 
     @abstractmethod
@@ -879,7 +879,6 @@ class Integrator(ABC):
                     conc, res, diff = self._get_bos_data_from_operator(i, source_rate, conc)
                 else:
                     conc, res = self._get_bos_data_from_restart(i, source_rate, conc)
-
                 print(f'k: {res.k.n}')
                 # Solve Bateman equations over time interval
                 proc_time, conc_list, res_list = self(conc, res.rates, dt, source_rate, i)

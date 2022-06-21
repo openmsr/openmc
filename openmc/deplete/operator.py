@@ -220,7 +220,7 @@ class Operator(TransportOperator):
                  fission_yield_mode="constant", fission_yield_opts=None,
                  reaction_rate_mode="direct", reaction_rate_opts=None,
                  reduce_chain=False, reduce_chain_level=None,
-                 remove_dep_nuc=None, k_search=None):
+                 remove_dep_nuc=None, k_search=None, eql0d=None):
         # check for old call to constructor
         if isinstance(model, openmc.Geometry):
             msg = "As of version 0.13.0 openmc.deplete.Operator requires an " \
@@ -301,6 +301,7 @@ class Operator(TransportOperator):
         self.remove_dep_nuc = remove_dep_nuc
 
         self.k_search = k_search
+        self.eql0d = eql0d
 
         # Determine which nuclides have incident neutron data
         self.nuclides_with_data = self._get_nuclides_with_data(cross_sections)
@@ -533,7 +534,6 @@ class Operator(TransportOperator):
                 dict[nuc] = x[m][i]  / vol * 1.e-24
             list_of_dict.append(dict)
 
-
         def mat_k_search(x,mat_id,range,bracketed_method,mat_comp,exclude,tol,target,density_limit,copy_model,volume_dict,nucs,list_of_dict,*args):
             #Check if self.k_search['mat_id'] is a valid depletable material id
             if str(mat_id) not in volume_dict.keys():
@@ -672,19 +672,19 @@ class Operator(TransportOperator):
                             msg = (f'Surface coefficients {keys} are not one. Ambigous')
                             raise Exception(msg)
 
-                for idx,mat in enumerate(_model.materials):
-
+                idx = 0
+                for i,mat in enumerate(_model.materials):
                     if mat.depletable:
                         # remove all nuclides in depletable materials
                         for nuc in mat.get_nuclides():
-                            _model.materials[idx].remove_nuclide(nuc)
+                            _model.materials[i].remove_nuclide(nuc)
                         # add new nuclides in depletable materials
                         for nuc,val in list_of_dict[idx].items():
                             # Atom density less than limit and nuclides not in cross section library
                             if val > density_limit and nuc not in exclude:
-                                _model.materials[idx].add_nuclide(nuc,val)
-                        _model.materials[idx].set_density('sum')
-
+                                _model.materials[i].add_nuclide(nuc,val)
+                        _model.materials[i].set_density('sum')
+                        idx += 1
                 _model.export_to_xml()
                 return _model
 
@@ -715,6 +715,7 @@ class Operator(TransportOperator):
                 # do search for keff
                 search = openmc.search_for_keff(_create_param_geom_model,bracket=[guess+lower_range,guess+upper_range], #initial_guess=guess,
                                         tol=tolerance,bracketed_method=bracketed_method, target=target,print_iterations=True)
+                print(len(search))
                 # if no erros search algorithm return 3 values, store res and proceed
                 if len(search) == 3:
                     res, guesses, k = search
@@ -786,7 +787,7 @@ class Operator(TransportOperator):
                 mat_id = refuel['mat_id']
                 mat_comp = refuel['mat_comp']
                 tol = refuel['tol']
-                x, diff_mat = mat_k_search(x,mat_id,range,bracketed_method,mat_comp,exclude,tol,target,copy_model,volume_dict,nucs,list_of_dict,surf_id,res)
+                x, diff_mat = mat_k_search(x,mat_id,range,bracketed_method,mat_comp,exclude,tol,target,density_limit,copy_model,volume_dict,nucs,list_of_dict,surf_id,res)
 
             return x, diff
 
