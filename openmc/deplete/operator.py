@@ -524,7 +524,6 @@ class Operator(TransportOperator):
 
         # Get dep. mat ids and nuclides from previous result file
         volume_dict, nucs, burns, full_burns =  self.get_results_info()
-
         #create list of dicts of atom densities for each dep. mat. from previous step conc. vector (x)
         list_of_dict = []
         for m, (id,vol) in enumerate(volume_dict.items()):
