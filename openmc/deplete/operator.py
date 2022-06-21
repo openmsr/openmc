@@ -714,7 +714,7 @@ class Operator(TransportOperator):
                 # do search for keff
                 search = openmc.search_for_keff(_create_param_geom_model,bracket=[guess+lower_range,guess+upper_range], #initial_guess=guess,
                                         tol=tolerance,bracketed_method=bracketed_method, target=target,print_iterations=True)
-                print(len(search))
+
                 # if no erros search algorithm return 3 values, store res and proceed
                 if len(search) == 3:
                     res, guesses, k = search
