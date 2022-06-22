@@ -555,30 +555,27 @@ class Operator(TransportOperator):
                                 msg = (f'Surface coefficients {keys} are not one. Ambigous')
                                 raise Exception(msg)
 
-                for idx,mat in enumerate(_model.materials):
-
+                lod_ind = 0 #list_of_dict index
+                for i,mat in enumerate(_model.materials):
                     if mat.depletable:
                         ## add new nuclides in depletable materials
-                        for nuc,val in list_of_dict[idx].items():
-
+                        for nuc,val in list_of_dict[lod_ind].items():
                             if nuc not in mat_comp.keys():
                                 # Atom density less than limit and nuclides not in cross section library
                                 if val < density_limit or nuc in exclude:
-                                     _model.materials[idx].remove_nuclide(nuc)
+                                     _model.materials[i].remove_nuclide(nuc)
                                 else:
-                                    _model.materials[idx].remove_nuclide(nuc)
-                                    _model.materials[idx].add_nuclide(nuc,val)
-
+                                    _model.materials[i].remove_nuclide(nuc)
+                                    _model.materials[i].add_nuclide(nuc,val)
                             else:
-
                                 if mat.id == int(mat_id):
-                                    _model.materials[idx].remove_nuclide(nuc)
-                                    _model.materials[idx].add_nuclide(nuc,val+param*mat_comp[nuc])
+                                    _model.materials[i].remove_nuclide(nuc)
+                                    _model.materials[i].add_nuclide(nuc,val+param*mat_comp[nuc])
                                 else:
-                                    _model.materials[idx].remove_nuclide(nuc)
-                                    _model.materials[idx].add_nuclide(nuc,val)
-
-                        _model.materials[idx].set_density('sum')
+                                    _model.materials[i].remove_nuclide(nuc)
+                                    _model.materials[i].add_nuclide(nuc,val)
+                        _model.materials[i].set_density('sum')
+                        lod_ind += 1
 
                 _model.export_to_xml()
                 return _model
@@ -671,19 +668,19 @@ class Operator(TransportOperator):
                             msg = (f'Surface coefficients {keys} are not one. Ambigous')
                             raise Exception(msg)
 
-                idx = 0
+                lod_ind = 0 #list_of_dict index
                 for i,mat in enumerate(_model.materials):
                     if mat.depletable:
                         # remove all nuclides in depletable materials
                         for nuc in mat.get_nuclides():
                             _model.materials[i].remove_nuclide(nuc)
                         # add new nuclides in depletable materials
-                        for nuc,val in list_of_dict[idx].items():
+                        for nuc,val in list_of_dict[lod_ind].items():
                             # Atom density less than limit and nuclides not in cross section library
                             if val > density_limit and nuc not in exclude:
                                 _model.materials[i].add_nuclide(nuc,val)
                         _model.materials[i].set_density('sum')
-                        idx += 1
+                        lod_ind += 1
                 _model.export_to_xml()
                 return _model
 
