@@ -52,6 +52,8 @@ def deplete(func, chain, x, rates, dt, eql0d, matrix_func=None):
             "equal to the number of compositions {}".format(
                 len(fission_yields), len(x)))
 
+    idx_mat = [(v,int(k)) for k,v in rates.index_mat.items() ]
+    eql0d_list = [[(mat[0],mat[0]),None] for mat in idx_mat]
     if eql0d is None:
         if matrix_func is None:
             matrices = map(chain.form_matrix, rates, eql0d_list, fission_yields)
@@ -65,9 +67,6 @@ def deplete(func, chain, x, rates, dt, eql0d, matrix_func=None):
             x_result = list(starmap(func, inputs))
 
     else:
-        idx_mat = [(v,int(k)) for k,v in rates.index_mat.items() ]
-        eql0d_list = [[(mat[0],mat[0]),None] for mat in idx_mat]
-
         rates_list = [rate for rate in rates]
         null_rate = copy.deepcopy(rates)[0]
         null_rate.fill(0)
