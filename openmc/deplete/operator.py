@@ -725,32 +725,32 @@ class Operator(TransportOperator):
                     if np.array(k).prod() < target:
 
                         # If k is close enought to target (below 0.2%), let's not complicate too much and get directly that value
-                        if (target - np.array(k).max()) < 0.002:
-                            index = [idx for idx,i in enumerate(k) if i == np.array(k).max()][0]
-                            res =  guesses[index]
+                        #if (target - np.array(k).max()) < 0.002:
+                        #    index = [idx for idx,i in enumerate(k) if i == np.array(k).max()][0]
+                        #    res =  guesses[index]
 
                         # Let's restric the bracket range in a clever way
+                        #else:
+                        if (target - np.array(k).prod()) <= 0.02:
+                            lower_range = upper_range - 3
+                        elif 0.02 < (target - np.array(k).prod()) < 0.03:
+                            lower_range = upper_range - 1
                         else:
-                            if (target - np.array(k).prod()) <= 0.02:
-                                lower_range = upper_range - 2
-                            elif 0.02 < (target - np.array(k).prod()) < 0.03:
-                                lower_range = upper_range - 1
-                            else:
-                                lower_range = upper_range - 0.5
-                            upper_range += abs(range[1])
+                            lower_range = upper_range - 0.5
+                        upper_range += abs(range[1])
 
                     # If the bracket is above the target
                     else:
 
                         # If k is close enought to target, let's not complicate too much and get directly that value
-                        if (np.array(k).min() -target)  < 0.002:
-                            index = [idx for idx,i in enumerate(k) if i == np.array(k).min()][0]
-                            res = guesses[index]
+                        #if (np.array(k).min() -target)  < 0.002:
+                        #    index = [idx for idx,i in enumerate(k) if i == np.array(k).min()][0]
+                        #    res = guesses[index]
 
                         # Let's restric the bracket range in a clever way
-                        else:
-                            upper_range = lower_range + 1 # same as above
-                            lower_range -= abs(range[0])
+                        #else:
+                        upper_range = lower_range + 1 # same as above
+                        lower_range -= abs(range[0])
 
                 else:
                     msg = (f'search_for_keff output not contemplated')
