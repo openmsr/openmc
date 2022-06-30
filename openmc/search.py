@@ -7,12 +7,13 @@ import openmc
 import openmc.model
 import openmc.checkvalue as cv
 
+import numpy as np
 
 _SCALAR_BRACKETED_METHODS = ['brentq', 'brenth', 'ridder', 'bisect']
 
 
 def _search_keff(guess, target, model_builder, model_args, print_iterations,
-                 print_output, guesses, results):
+                 print_output, guesses, results, p):
     """Function which will actually create our model, run the calculation, and
     obtain the result. This function will be passed to the root finding
     algorithm
@@ -53,6 +54,7 @@ def _search_keff(guess, target, model_builder, model_args, print_iterations,
     #sp_filepath = model.run(output=print_output)
     #model.export_to_xml()
     #sp_filepath = model.run()
+    model.settings.particles = p
     openmc.run(output=print_output)
     sp_filepath = f'statepoint.{str(model.settings.batches)}.h5'
     with openmc.StatePoint(sp_filepath) as sp:
@@ -73,7 +75,7 @@ def _search_keff(guess, target, model_builder, model_args, print_iterations,
 def search_for_keff(model_builder, initial_guess=None, target=1.0,
                     bracket=None, model_args=None, tol=None,
                     bracketed_method='bisect', print_iterations=False,
-                    print_output=False, **kwargs):
+                    print_output=False, check_robustness=False, **kwargs):
     """Function to perform a keff search by modifying a model parametrized by a
     single independent variable.
 
@@ -189,9 +191,32 @@ def search_for_keff(model_builder, initial_guess=None, target=1.0,
         raise ValueError("Either the 'bracket' or 'initial_guess' parameters "
                          "must be set")
 
+
+
+    # Extract total particles
+    p = model_builder(bracket[0], **model_args).settings.particles
+
+    # Check if the statistic is robust enought before performing the optimization
+    if check_robustness:
+        cond = False
+        p = model_builder(bracket[0], **model_args).settings.particles
+        while cond == False:
+            print(p)
+            guesses_check = []
+            results_check = []
+            _search_keff(bracket[0],target,model_builder,model_args,print_iterations,print_output,guesses_check,results_check,p)
+            _search_keff(bracket[1],target,model_builder,model_args,print_iterations,print_output,guesses_check,results_check,p)
+            cond1 = np.sign(results_check[0].n - target ) != np.sign(results_check[1].n -target)
+            cond2 = np.sign(results_check[0].n + results_check[0].s - target ) != np.sign(results_check[1].n - results_check[1].s -target)
+            cond3 = np.sign(results_check[0].n - results_check[0].s - target ) != np.sign(results_check[1].n + results_check[1].s -target)
+            if cond1 and cond2 and cond3 or not cond1 and not cond2 and not cond3 or p>=200000: #Let's put a reasonable maximum to the number of particles
+               cond = True
+            else:
+                p *= 2 #double the amount of particles
+
     # Add information to be passed to the searching function
     args['args'] = (target, model_builder, model_args, print_iterations,
-                    print_output, guesses, results)
+                    print_output, guesses, results, p)
 
     # Create a new dictionary with the arguments from args and kwargs
     args.update(kwargs)
