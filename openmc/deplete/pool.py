@@ -29,6 +29,8 @@ def deplete(func, chain, x, rates, dt, eql0d, matrix_func=None):
         Reaction rates (from transport operator)
     dt : float
         Time in [s] to deplete for
+    eql0d : callable, optional
+        Dictionary to define Bateman removal coefficient.
     maxtrix_func : callable, optional
         Function to form the depletion matrix after calling
         ``matrix_func(chain, rates, fission_yields)``, where

@@ -708,9 +708,14 @@ class Operator(TransportOperator):
                     else:
                         raise Exception(msg)
 
+                #check statistical robustness only if guess is close to the upper limit
+                if guess > 20:
+                    check_robustness = True
+                else:
+                    check_robustness = False
                 # do search for keff
                 search = openmc.search_for_keff(_create_param_geom_model,bracket=[guess+lower_range,guess+upper_range], #initial_guess=guess,
-                                        tol=tolerance,bracketed_method=bracketed_method, target=target,print_iterations=True)
+                                        tol=tolerance,bracketed_method=bracketed_method, target=target,print_iterations=True, check_robustness = check_robustness)
 
                 # if no erros search algorithm return 3 values, store res and proceed
                 if len(search) == 3:
