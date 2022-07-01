@@ -11,8 +11,8 @@ def celi_f2(chain, rates, fission_yields=None):
             + 5 / 12 * chain.form_matrix(rates[1], fission_yields))
 
 
-def cf4_f1(chain, rates, fission_yields=None):
-    return 1 / 2 * chain.form_matrix(rates, fission_yields)
+def cf4_f1(chain, rates, eql0d, fission_yields=None):
+    return 1 / 2 * chain.form_matrix(rates, eql0d, fission_yields)
 
 
 def cf4_f2(chain, rates, fission_yields=None):

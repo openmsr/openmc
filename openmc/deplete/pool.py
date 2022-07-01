@@ -60,7 +60,7 @@ def deplete(func, chain, x, rates, dt, eql0d, matrix_func=None):
         if matrix_func is None:
             matrices = map(chain.form_matrix, rates, eql0d_list, fission_yields)
         else:
-            matrices = map(matrix_func, repeat(chain), rates, fission_yields)
+            matrices = map(matrix_func, repeat(chain), rates, eql0d_list, fission_yields)
         inputs = zip(matrices, x, repeat(dt))
         if USE_MULTIPROCESSING:
             with Pool() as pool:
@@ -89,7 +89,7 @@ def deplete(func, chain, x, rates, dt, eql0d, matrix_func=None):
         if matrix_func is None:
             matrices = map(chain.form_matrix, rates, eql0d_list, fission_yields)
         else:
-            matrices = map(matrix_func, repeat(chain), rates, fission_yields)
+            matrices = map(matrix_func, repeat(chain), rates, eql0d_list, fission_yields)
 
         matrices_list = list(matrices)
         n=len(idx_mat)
