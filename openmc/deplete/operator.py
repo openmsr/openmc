@@ -696,17 +696,17 @@ class Operator(TransportOperator):
                 tolerance = abs(tol/guess)
 
             while res==None:
-                # Check if upper limit reached at beginning of every step
-                if guess + upper_range > range[2]:
-                    msg = (f'Upper limit reached, stopping depletion')
-                    msg2 = (f'Upper limit reached, refueling...')
-
-                    if self.k_search['refuel']:
-                        print(msg2)
-                        res = init_param
-                        break #exit the while loop
-                    else:
-                        raise Exception(msg)
+                ## Check if upper limit reached at beginning of every step
+                # if guess + upper_range > range[2]:
+                #     msg = (f'Upper limit reached, stopping depletion')
+                #     msg2 = (f'Upper limit reached, refueling...')
+                #
+                #     if self.k_search['refuel']:
+                #         print(msg2)
+                #         res = init_param
+                #         break #exit the while loop
+                #     else:
+                #         raise Exception(msg)
 
                 #check statistical robustness only if guess is close to the upper limit
                 if guess > 20:
@@ -719,7 +719,22 @@ class Operator(TransportOperator):
 
                 # if no erros search algorithm return 3 values, store res and proceed
                 if len(search) == 3:
-                    res, guesses, k = search
+                    _res, guesses, k = search
+
+                    # if the return root is below the upper limit, store the result and continue
+                    if _res <= range[2]:
+                        res = _res
+                    else:
+                        msg = (f'Upper limit reached, stopping depletion')
+                        msg2 = (f'Upper limit reached, refueling...')
+
+                        if self.k_search['refuel']:
+                            print(msg2)
+                            res = init_param
+                            break #exit the while loop
+                        else:
+                            raise Exception(msg)
+
 
                 # otherwise, search algorithm return 2 values
                 elif len(search) == 2:
