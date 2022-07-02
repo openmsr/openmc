@@ -54,8 +54,18 @@ def deplete(func, chain, x, rates, dt, eql0d, matrix_func=None):
             "equal to the number of compositions {}".format(
                 len(fission_yields), len(x)))
 
-    idx_mat = [(v,int(k)) for k,v in rates.index_mat.items() ]
+    if type(rates) == list:
+        list_rates = rates
+        unzip_rates = [list(t) for t in zip(*rates)]
+        rates_0 = unzip_rates[0]
+        _rates = rates_0[0]
+    else:
+        _rates = rates
+        list_rates = [rate for rate in rates]
+
+    idx_mat = [(v,int(k)) for k,v in _rates.index_mat.items() ]
     eql0d_list = [[(mat[0],mat[0]),None] for mat in idx_mat]
+
     if eql0d is None:
         if matrix_func is None:
             matrices = map(chain.form_matrix, rates, eql0d_list, fission_yields)
@@ -69,8 +79,7 @@ def deplete(func, chain, x, rates, dt, eql0d, matrix_func=None):
             x_result = list(starmap(func, inputs))
 
     else:
-        rates_list = [rate for rate in rates]
-        null_rate = copy.deepcopy(rates)[0]
+        null_rate = copy.deepcopy(_rates)[0]
         null_rate.fill(0)
         null_fy=copy.deepcopy(fission_yields)[0]
         for product, y in null_fy.items():
@@ -80,12 +89,16 @@ def deplete(func, chain, x, rates, dt, eql0d, matrix_func=None):
             i = [idx[0] for idx in idx_mat if idx[1]==item['mat_id']][0]
             eql0d_list[i][1] = item['transfer']
             for group in item['transfer']:
-                rates_list.append(null_rate)
+                if type(rates) == list:
+                    list_rates.append((null_rate,null_rate))
+                else:
+                    list_rates.append(null_rate)
                 fission_yields.append(null_fy)
                 j = [idx[0] for idx in idx_mat if idx[1]==group['to']][0]
                 eql0d_list.append([(j,i),group])
-        rates = rates_list
 
+        rates = list_rates
+        #print(rates)
         if matrix_func is None:
             matrices = map(chain.form_matrix, rates, eql0d_list, fission_yields)
         else:

@@ -720,7 +720,6 @@ class Operator(TransportOperator):
                 # if no erros search algorithm return 3 values, store res and proceed
                 if len(search) == 3:
                     _res, guesses, k = search
-
                     # if the return root is below the upper limit, store the result and continue
                     if _res <= range[2]:
                         res = _res
@@ -740,6 +739,17 @@ class Operator(TransportOperator):
                 elif len(search) == 2:
                     print ("Invalid range")
                     guesses, k = search
+
+                    if guesses[-1] > range[2] + upper_range:
+                        msg = (f'Upper limit reached, stopping depletion')
+                        msg2 = (f'Upper limit reached, refueling...')
+
+                        if self.k_search['refuel']:
+                            print(msg2)
+                            res = init_param
+                            break #exit the while loop
+                        else:
+                            raise Exception(msg)
 
                     # If the bracket range is below the target
                     if np.array(k).prod() < target:
