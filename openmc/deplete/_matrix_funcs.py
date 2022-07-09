@@ -35,7 +35,7 @@ def cf4_f4(chain, rates, eql0d, fission_yields=None):
 
 
 def rk4_f1(chain, rates, eql0d, fission_yields=None):
-    return 1 / 2 * chain.form_matrix(rates, fission_yields)
+    return 1 / 2 * chain.form_matrix(rates, eql0d, fission_yields)
 
 
 def rk4_f4(chain, rates, eql0d, fission_yields=None):
