@@ -34,15 +34,15 @@ def cf4_f4(chain, rates, eql0d, fission_yields=None):
             + 1 / 4 * chain.form_matrix(rates[3], eql0d, fission_yields))
 
 
-def rk4_f1(chain, rates, fission_yields=None):
+def rk4_f1(chain, rates, eql0d, fission_yields=None):
     return 1 / 2 * chain.form_matrix(rates, fission_yields)
 
 
-def rk4_f4(chain, rates, fission_yields=None):
-    return (1 / 6 * chain.form_matrix(rates[0], fission_yields)
-            + 1 / 3 * chain.form_matrix(rates[1], fission_yields)
-            + 1 / 3 * chain.form_matrix(rates[2], fission_yields)
-            + 1 / 6 * chain.form_matrix(rates[3], fission_yields))
+def rk4_f4(chain, rates, eql0d, fission_yields=None):
+    return (1 / 6 * chain.form_matrix(rates[0], eql0d, fission_yields)
+            + 1 / 3 * chain.form_matrix(rates[1], eql0d, fission_yields)
+            + 1 / 3 * chain.form_matrix(rates[2], eql0d, fission_yields)
+            + 1 / 6 * chain.form_matrix(rates[3], eql0d, fission_yields))
 
 
 def leqi_f1(chain, inputs, fission_yields):
