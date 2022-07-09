@@ -57,13 +57,13 @@ def deplete(func, chain, x, rates, dt, eql0d, matrix_func=None):
     if type(rates) == list:
         list_rates = rates
         unzip_rates = [list(t) for t in zip(*rates)]
-        rates_0 = unzip_rates[0]
-        _rates = rates_0[0]
+        _rates = unzip_rates[0]
+        idx_mat = [(v,int(k)) for k,v in _rates[0].index_mat.items() ]
     else:
         _rates = rates
         list_rates = [rate for rate in rates]
+        idx_mat = [(v,int(k)) for k,v in _rates.index_mat.items() ]
 
-    idx_mat = [(v,int(k)) for k,v in _rates.index_mat.items() ]
     eql0d_list = [[(mat[0],mat[0]),None] for mat in idx_mat]
 
     if eql0d is None:
@@ -81,7 +81,8 @@ def deplete(func, chain, x, rates, dt, eql0d, matrix_func=None):
     else:
         null_rate = copy.deepcopy(_rates)[0]
         null_rate.fill(0)
-        null_fy=copy.deepcopy(fission_yields)[0]
+        _fission_yields = copy.deepcopy(fission_yields)
+        null_fy=copy.deepcopy(_fission_yields)[0]
         for product, y in null_fy.items():
                 y.yields.fill(0)
 
@@ -90,19 +91,18 @@ def deplete(func, chain, x, rates, dt, eql0d, matrix_func=None):
             eql0d_list[i][1] = item['transfer']
             for group in item['transfer']:
                 if type(rates) == list:
-                    list_rates.append((null_rate,null_rate))
+                    list_rates.append((null_rate,)*len(unzip_rates))
                 else:
                     list_rates.append(null_rate)
-                fission_yields.append(null_fy)
+                _fission_yields.append(null_fy)
                 j = [idx[0] for idx in idx_mat if idx[1]==group['to']][0]
                 eql0d_list.append([(j,i),group])
 
         rates = list_rates
-        #print(rates)
         if matrix_func is None:
-            matrices = map(chain.form_matrix, rates, eql0d_list, fission_yields)
+            matrices = map(chain.form_matrix, rates, eql0d_list, _fission_yields)
         else:
-            matrices = map(matrix_func, repeat(chain), rates, eql0d_list, fission_yields)
+            matrices = map(matrix_func, repeat(chain), rates, eql0d_list, _fission_yields)
 
         matrices_list = list(matrices)
         n=len(idx_mat)
@@ -120,5 +120,4 @@ def deplete(func, chain, x, rates, dt, eql0d, matrix_func=None):
         x_result = func(matrix,x,dt)
         split_index = np.cumsum([i.shape[0] for i in matrices_list[:n]]).tolist()[:-1]
         x_result = np.split(x_result,split_index)
-
     return x_result
