@@ -740,7 +740,7 @@ class Operator(TransportOperator):
                     print ("Invalid range")
                     guesses, k = search
 
-                    if guesses[-1] > range[2] + upper_range:
+                    if guesses[-1] > range[2]:
                         msg = (f'Upper limit reached, stopping depletion')
                         msg2 = (f'Upper limit reached, refueling...')
 
