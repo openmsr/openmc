@@ -828,7 +828,7 @@ class Operator(TransportOperator):
             surf_id = self.k_search['surf_id']
             range = self.k_search['range']
             bracketed_method = self.k_search['bracketed_method']
-            init_param = self.k_search['init_param'] + 30 #temporary
+            init_param = self.k_search['init_param'] + 20 #temporary
             x, diff = geom_k_search(x,surf_id,range,bracketed_method,init_param,exclude,tol,target,density_limit,copy_model,volume_dict,nucs,list_of_dict)
         else:
             msg = (f'keff_search depletion Keys are not recognized')
