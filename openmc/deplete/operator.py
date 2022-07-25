@@ -708,8 +708,8 @@ class Operator(TransportOperator):
                 #     else:
                 #         raise Exception(msg)
 
-                #check statistical robustness only if guess is close to the upper limit
-                if guess > 20:
+                #check statistical robustness only if guess is close enough to the upper limit
+                if guess >= abs(range[1])*0.7:
                     check_robustness = True
                 else:
                     check_robustness = False
@@ -767,7 +767,7 @@ class Operator(TransportOperator):
                             lower_range = upper_range - 1
                         else:
                             lower_range = upper_range - 0.5
-                        upper_range += abs(range[1])
+                        upper_range += abs(range[1])/2
 
                     # If the bracket is above the target
                     else:
@@ -779,7 +779,7 @@ class Operator(TransportOperator):
 
                         # Let's restric the bracket range in a clever way
                         #else:
-                        upper_range = lower_range + 1 # same as above
+                        upper_range = lower_range + 2 # same as above
                         lower_range -= abs(range[0])
 
                 else:
@@ -828,7 +828,7 @@ class Operator(TransportOperator):
             surf_id = self.k_search['surf_id']
             range = self.k_search['range']
             bracketed_method = self.k_search['bracketed_method']
-            init_param = self.k_search['init_param'] + 20 #temporary
+            init_param = self.k_search['init_param']
             x, diff = geom_k_search(x,surf_id,range,bracketed_method,init_param,exclude,tol,target,density_limit,copy_model,volume_dict,nucs,list_of_dict)
         else:
             msg = (f'keff_search depletion Keys are not recognized')
