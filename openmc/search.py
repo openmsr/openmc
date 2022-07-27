@@ -209,8 +209,11 @@ def search_for_keff(model_builder, initial_guess=None, target=1.0,
             cond1 = np.sign(results_check[0].n - target ) != np.sign(results_check[1].n -target)
             cond2 = np.sign(results_check[0].n + results_check[0].s - target ) != np.sign(results_check[1].n - results_check[1].s -target)
             cond3 = np.sign(results_check[0].n - results_check[0].s - target ) != np.sign(results_check[1].n + results_check[1].s -target)
-            if cond1 and cond2 and cond3 or not cond1 and not cond2 and not cond3 or p>=200000: #Let's put a reasonable maximum to the number of particles
+            if (cond1 and cond2 and cond3) or p >= 200000: #Let's put a reasonable maximum to the number of particles
                cond = True
+            elif not cond1 and not cond2 and not cond3:
+                p *= 2 #if below ot above the target double the particles anyway, will be needed in the next iteration
+                cond = True
             else:
                 p *= 2 #double the amount of particles
 
