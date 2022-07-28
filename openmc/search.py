@@ -217,7 +217,7 @@ def search_for_keff(model_builder, initial_guess=None, target=1.0,
 
     # Check if the statistic is robust enought before performing the optimization
     if check_brackets:
-        particles = check_brackets(particles,model,args,print_iterations,print_output,bracket[0],bracket[1],200):
+        particles = check_brackets(particles,model,args,print_iterations,print_output,bracket[0],bracket[1],200)
 
     # Add information to be passed to the searching function
     args['args'] = (target, model_builder, model_args, print_iterations,
