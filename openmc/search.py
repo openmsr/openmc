@@ -54,7 +54,7 @@ def _search_keff(guess, target, model_builder, model_args, print_iterations,
     #sp_filepath = model.run(output=print_output)
     #model.export_to_xml()
     #sp_filepath = model.run()
-    model.settings.particles = p
+    model.settings.batches = particles
     openmc.run(output=print_output)
     sp_filepath = f'statepoint.{str(model.settings.batches)}.h5'
     with openmc.StatePoint(sp_filepath) as sp:
@@ -71,11 +71,30 @@ def _search_keff(guess, target, model_builder, model_args, print_iterations,
 
     return keff.n - target
 
+def check_brackets(particles,model,args,print_iterations,print_output,bracket_0,bracket_1,max_p):
+    cond = False
+    while cond == False:
+        print(particles)
+        guesses_check = []
+        results_check = []
+        _search_keff(bracket_0,target,model,model_args,print_iterations,print_output,guesses_check,results_check,particles)
+        _search_keff(bracket_1,target,model,model_args,print_iterations,print_output,guesses_check,results_check,particles)
+        cond1 = np.sign(results_check[0].n - target ) != np.sign(results_check[1].n -target)
+        cond2 = np.sign(results_check[0].n + results_check[0].s - target ) != np.sign(results_check[1].n - results_check[1].s -target)
+        cond3 = np.sign(results_check[0].n - results_check[0].s - target ) != np.sign(results_check[1].n + results_check[1].s -target)
+        if (cond1 and cond2 and cond3) or p >= max_p: #Let's put a reasonable maximum to the number of particles
+           cond = True
+        elif not cond1 and not cond2 and not cond3:
+            particles *= 2 #if below ot above the target double the particles anyway, will be needed in the next iteration
+            cond = True
+        else:
+            particles *= 2 #double the amount of particles
+    return particles
 
 def search_for_keff(model_builder, initial_guess=None, target=1.0,
                     bracket=None, model_args=None, tol=None,
                     bracketed_method='bisect', print_iterations=False,
-                    print_output=False, check_robustness=False, **kwargs):
+                    print_output=False, check_brackets=False, **kwargs):
     """Function to perform a keff search by modifying a model parametrized by a
     single independent variable.
 
@@ -194,32 +213,15 @@ def search_for_keff(model_builder, initial_guess=None, target=1.0,
 
 
     # Extract total particles
-    p = model_builder(bracket[0], **model_args).settings.particles
+    particles = model.settings.batches
 
     # Check if the statistic is robust enought before performing the optimization
-    if check_robustness:
-        cond = False
-        p = model_builder(bracket[0], **model_args).settings.particles
-        while cond == False:
-            print(p)
-            guesses_check = []
-            results_check = []
-            _search_keff(bracket[0],target,model_builder,model_args,print_iterations,print_output,guesses_check,results_check,p)
-            _search_keff(bracket[1],target,model_builder,model_args,print_iterations,print_output,guesses_check,results_check,p)
-            cond1 = np.sign(results_check[0].n - target ) != np.sign(results_check[1].n -target)
-            cond2 = np.sign(results_check[0].n + results_check[0].s - target ) != np.sign(results_check[1].n - results_check[1].s -target)
-            cond3 = np.sign(results_check[0].n - results_check[0].s - target ) != np.sign(results_check[1].n + results_check[1].s -target)
-            if (cond1 and cond2 and cond3) or p >= 200000: #Let's put a reasonable maximum to the number of particles
-               cond = True
-            elif not cond1 and not cond2 and not cond3:
-                p *= 2 #if below ot above the target double the particles anyway, will be needed in the next iteration
-                cond = True
-            else:
-                p *= 2 #double the amount of particles
+    if check_brackets:
+        particles = check_brackets(particles,model,args,print_iterations,print_output,bracket[0],bracket[1],200):
 
     # Add information to be passed to the searching function
     args['args'] = (target, model_builder, model_args, print_iterations,
-                    print_output, guesses, results, p)
+                    print_output, guesses, results, particles)
 
     # Create a new dictionary with the arguments from args and kwargs
     args.update(kwargs)
