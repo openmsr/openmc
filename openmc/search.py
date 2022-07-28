@@ -230,6 +230,7 @@ def search_for_keff(model_builder, initial_guess=None, target=1.0,
     try:
         zero_value = root_finder(**args)
     except:
+        print("failed")
         return guesses, results
 
     return zero_value, guesses, results
