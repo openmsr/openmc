@@ -709,13 +709,13 @@ class Operator(TransportOperator):
                 #         raise Exception(msg)
 
                 #check statistical robustness only if guess is close enough to the upper limit
-                if guess >= abs(range[1])*0.7:
-                    check_robustness = True
+                if guess >= abs(range[2])*0.7:
+                    check_brackets = True
                 else:
-                    check_robustness = False
+                    check_brackets = False
                 # do search for keff
                 search = openmc.search_for_keff(_create_param_geom_model,bracket=[guess+lower_range,guess+upper_range], #initial_guess=guess,
-                                        tol=tolerance,bracketed_method=bracketed_method, target=target,print_iterations=True, check_robustness = check_robustness)
+                                        tol=tolerance,bracketed_method=bracketed_method, target=target,print_iterations=True, check_brackets = check_brackets)
 
                 # if no erros search algorithm return 3 values, store res and proceed
                 if len(search) == 3:
