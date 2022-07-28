@@ -13,7 +13,7 @@ _SCALAR_BRACKETED_METHODS = ['brentq', 'brenth', 'ridder', 'bisect']
 
 
 def _search_keff(guess, target, model_builder, model_args, print_iterations,
-                 print_output, guesses, results, p):
+                 print_output, guesses, results, particles):
     """Function which will actually create our model, run the calculation, and
     obtain the result. This function will be passed to the root finding
     algorithm
@@ -227,10 +227,9 @@ def search_for_keff(model_builder, initial_guess=None, target=1.0,
     args.update(kwargs)
 
     # Perform the search
-    #try:
-    zero_value = root_finder(**args)
-    #except:
-    #    print("failed")
-    #    return guesses, results
+    try:
+        zero_value = root_finder(**args)
+    except:
+        return guesses, results
 
     return zero_value, guesses, results
