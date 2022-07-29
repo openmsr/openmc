@@ -853,15 +853,16 @@ class Integrator(ABC):
                 len(self.operator.prev_res) - 1)
 
     def _step_control(self, step_index, bos_conc):
+        """Get BOS from Operator criticality step-wise control
+        """
         x = deepcopy(bos_conc)
-
+        # Get new vector after nuclides removal
         if step_index > 0 and self.operator.step_removal is not None:
             x = self.operator.make_step_removal(x)
-
+        # Get new vector after keff criticality control
         diff = 0
         if step_index > 0 and self.operator.keff_control is not None:
             x, diff = self.operator.make_keff_control(x,step_index)
-
         return x, diff
 
     def integrate(self, final_step=True):
