@@ -611,7 +611,7 @@ class Chain:
             out[nuc.name] = dict(yield_obj)
         return out
 
-    def form_matrix(self, rates, eql0d, fission_yields=None):
+    def form_matrix(self, rates, msr, fission_yields=None):
         """Forms depletion matrix.
 
         Parameters
@@ -623,7 +623,10 @@ class Chain:
             to be of the form ``{parent : {product : f_yield}}``
             with string nuclide names for ``parent`` and ``product``,
             and ``f_yield`` as the respective fission yield
-
+        msr: dict, Optional
+￼            Option to include removal transfer coefficent to the Bateman
+￼            differential equation, both for diagonal matrices and off-diagional
+￼            ones.     
         Returns
         -------
         scipy.sparse.csr_matrix
@@ -659,17 +662,17 @@ class Chain:
                             matrix[k, i] += branch_val
 
             # Loss/gain from transfer
-            if eql0d[1] is not None:
+            if msr[1] is not None:
                 # Diagonal matrix
-                if eql0d[0][0] == eql0d[0][1]:
-                    for group in eql0d[1]:
+                if msr[0][0] == msr[0][1]:
+                    for group in msr[1]:
                         if regex.split(nuc.name)[0] in group['element']:
                             coefficient = - 1 / group['cycle_time'] * group['efficiency']
                             matrix [i, i] += coefficient
                 # Off-diagonal matrix
                 else:
-                    if regex.split(nuc.name)[0] in eql0d[1]['element']:
-                        coefficient = 1 / eql0d[1]['cycle_time'] * eql0d[1]['efficiency']
+                    if regex.split(nuc.name)[0] in msr[1]['element']:
+                        coefficient = 1 / msr[1]['cycle_time'] * msr[1]['efficiency']
                         offdiag_matrix[i, i] += coefficient
                     else:
                         offdiag_matrix[i, i] += 0.0

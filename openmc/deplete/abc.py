@@ -658,7 +658,7 @@ class Integrator(ABC):
     """
 
     def __init__(self, operator, timesteps, power=None, power_density=None,
-                 source_rates=None, timestep_units='s', solver="cram48"):
+                 source_rates=None, msr=None, timestep_units='s', solver="cram48"):
         # Check number of stages previously used
         if operator.prev_res is not None:
             res = operator.prev_res[-1]
@@ -743,6 +743,7 @@ class Integrator(ABC):
         else:
             self.solver = solver
 
+        self._msr = msr
     @property
     def solver(self):
         return self._solver
@@ -778,7 +779,7 @@ class Integrator(ABC):
     def _timed_deplete(self, concs, rates, dt, matrix_func=None):
         start = time.time()
         results = deplete(
-            self._solver, self.chain, concs, rates, dt, self.operator.eql0d, matrix_func)
+            self._solver, self.chain, concs, rates, dt, self._msr, matrix_func)
         return time.time() - start, results
 
     @abstractmethod
@@ -828,18 +829,11 @@ class Integrator(ABC):
 
     def _get_bos_data_from_operator(self, step_index, source_rate, bos_conc):
         """Get beginning of step concentrations, reaction rates from Operator
-        and modify accordingly if remove_dep_nuc arguments is present """
+        """
         x = deepcopy(bos_conc)
-        # Do batch-wise change to the nuclide concentrations
-        diff = 0
-        if step_index > 0 and self.operator.remove_dep_nuc is not None:
-            x = self.operator.get_mod_nuc(x)
-        # Other option, do a k_search in between
-        if step_index > 0 and self.operator.k_search is not None:
-            x, diff = self.operator.make_k_search(x,step_index)
         res = self.operator(x, source_rate)
         self.operator.write_bos_data(step_index + self._i_res)
-        return x, res, diff
+        return x, res
 
     def _get_bos_data_from_restart(self, step_index, source_rate, bos_conc):
         """Get beginning of step concentrations, reaction rates from restart"""
@@ -858,6 +852,18 @@ class Integrator(ABC):
         return (self.operator.prev_res[-1].time[-1],
                 len(self.operator.prev_res) - 1)
 
+    def _step_control(self, step_index, bos_conc):
+        x = deepcopy(bos_conc)
+
+        if step_index > 0 and self.operator.step_removal is not None:
+            x = self.operator.make_step_removal(x)
+
+        diff = 0
+        if step_index > 0 and self.operator.keff_control is not None:
+            x, diff = self.operator.make_keff_control(x,step_index)
+
+        return x, diff
+
     def integrate(self, final_step=True):
         """Perform the entire depletion process across all steps
 
@@ -872,14 +878,22 @@ class Integrator(ABC):
         """
         with self.operator as conc:
             t, self._i_res = self._get_start_data()
+
             diff_list=[]
+
             for i, (dt, source_rate) in enumerate(self):
+
                 # Solve transport equation (or obtain result from restart)
                 if i > 0 or self.operator.prev_res is None:
-                    conc, res, diff = self._get_bos_data_from_operator(i, source_rate, conc)
+                    # Perform step-wise operation (including criticality control)
+                    conc, diff = self._step_control(i, conc)
+                    # Solve transport equation
+                    conc, res = self._get_bos_data_from_operator(i, source_rate, conc)
                 else:
                     conc, res = self._get_bos_data_from_restart(i, source_rate, conc)
+
                 print(f'k: {res.k.n}')
+
                 # Solve Bateman equations over time interval
                 proc_time, conc_list, res_list = self(conc, res.rates, dt, source_rate, i)
 

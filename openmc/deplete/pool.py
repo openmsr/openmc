@@ -13,7 +13,7 @@ import numpy as np
 USE_MULTIPROCESSING = True
 
 
-def deplete(func, chain, x, rates, dt, eql0d, matrix_func=None):
+def deplete(func, chain, x, rates, dt, msr, matrix_func=None):
     """Deplete materials using given reaction rates for a specified time
 
     Parameters
@@ -29,7 +29,7 @@ def deplete(func, chain, x, rates, dt, eql0d, matrix_func=None):
         Reaction rates (from transport operator)
     dt : float
         Time in [s] to deplete for
-    eql0d : callable, optional
+    msr : callable, optional
         Dictionary to define Bateman removal coefficient.
     maxtrix_func : callable, optional
         Function to form the depletion matrix after calling
@@ -54,23 +54,23 @@ def deplete(func, chain, x, rates, dt, eql0d, matrix_func=None):
             "equal to the number of compositions {}".format(
                 len(fission_yields), len(x)))
 
-    if type(rates) == list:
+    if type(rates) is list:
         list_rates = rates
         unzip_rates = [list(t) for t in zip(*rates)]
         _rates = unzip_rates[0]
         idx_mat = [(v,int(k)) for k,v in _rates[0].index_mat.items() ]
     else:
         _rates = rates
-        list_rates = [rate for rate in rates]
+        list_rates = [rate for rate in _rates]
         idx_mat = [(v,int(k)) for k,v in _rates.index_mat.items() ]
 
-    eql0d_list = [[(mat[0],mat[0]),None] for mat in idx_mat]
+    msr_list = [[(mat[0],mat[0]),None] for mat in idx_mat]
 
-    if eql0d is None:
+    if msr is None:
         if matrix_func is None:
-            matrices = map(chain.form_matrix, rates, eql0d_list, fission_yields)
+            matrices = map(chain.form_matrix, rates, msr_list, fission_yields)
         else:
-            matrices = map(matrix_func, repeat(chain), rates, eql0d_list, fission_yields)
+            matrices = map(matrix_func, repeat(chain), rates, msr_list, fission_yields)
         inputs = zip(matrices, x, repeat(dt))
         if USE_MULTIPROCESSING:
             with Pool() as pool:
@@ -79,6 +79,11 @@ def deplete(func, chain, x, rates, dt, eql0d, matrix_func=None):
             x_result = list(starmap(func, inputs))
 
     else:
+        """ Construct a single sparse matrix of matrices, where diagoanl ones
+￼       correspond to each depletable material and off-diagonal to materials
+￼       interaction (e.g. transfer of nuclides from one material to another)
+￼
+￼       """
         null_rate = copy.deepcopy(_rates)[0]
         null_rate.fill(0)
         _fission_yields = copy.deepcopy(fission_yields)
@@ -86,9 +91,9 @@ def deplete(func, chain, x, rates, dt, eql0d, matrix_func=None):
         for product, y in null_fy.items():
                 y.yields.fill(0)
 
-        for item in eql0d:
+        for item in msr:
             i = [idx[0] for idx in idx_mat if idx[1]==item['mat_id']][0]
-            eql0d_list[i][1] = item['transfer']
+            msr_list[i][1] = item['transfer']
             for group in item['transfer']:
                 if type(rates) == list:
                     list_rates.append((null_rate,)*len(unzip_rates))
@@ -96,13 +101,13 @@ def deplete(func, chain, x, rates, dt, eql0d, matrix_func=None):
                     list_rates.append(null_rate)
                 _fission_yields.append(null_fy)
                 j = [idx[0] for idx in idx_mat if idx[1]==group['to']][0]
-                eql0d_list.append([(j,i),group])
+                msr_list.append([(j,i),group])
 
         rates = list_rates
         if matrix_func is None:
-            matrices = map(chain.form_matrix, rates, eql0d_list, _fission_yields)
+            matrices = map(chain.form_matrix, rates, msr_list, _fission_yields)
         else:
-            matrices = map(matrix_func, repeat(chain), rates, eql0d_list, _fission_yields)
+            matrices = map(matrix_func, repeat(chain), rates, msr_list, _fission_yields)
 
         matrices_list = list(matrices)
         n=len(idx_mat)
@@ -110,7 +115,7 @@ def deplete(func, chain, x, rates, dt, eql0d, matrix_func=None):
         for raw in range(n):
             raw_list =[None for d in range(n)]
             for col in range(n):
-                for i,m in zip(eql0d_list,matrices_list):
+                for i,m in zip(msr_list,matrices_list):
                     if i[0] == (raw,col):
                         raw_list[col]=m
             array_list.append(raw_list)
@@ -120,4 +125,5 @@ def deplete(func, chain, x, rates, dt, eql0d, matrix_func=None):
         x_result = func(matrix,x,dt)
         split_index = np.cumsum([i.shape[0] for i in matrices_list[:n]]).tolist()[:-1]
         x_result = np.split(x_result,split_index)
+
     return x_result

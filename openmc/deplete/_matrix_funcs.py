@@ -1,48 +1,48 @@
 """Functions to form the special matrix for depletion"""
 
 
-def celi_f1(chain, rates, eql0d, fission_yields=None):
-    return (5 / 12 * chain.form_matrix(rates[0], eql0d, fission_yields)
-            + 1 / 12 * chain.form_matrix(rates[1], eql0d, fission_yields))
+def celi_f1(chain, rates, msr, fission_yields=None):
+    return (5 / 12 * chain.form_matrix(rates[0], msr, fission_yields)
+            + 1 / 12 * chain.form_matrix(rates[1], msr, fission_yields))
 
 
-def celi_f2(chain, rates, eql0d, fission_yields=None):
-    return (1 / 12 * chain.form_matrix(rates[0], eql0d, fission_yields)
-            + 5 / 12 * chain.form_matrix(rates[1], eql0d, fission_yields))
+def celi_f2(chain, rates, msr, fission_yields=None):
+    return (1 / 12 * chain.form_matrix(rates[0], msr, fission_yields)
+            + 5 / 12 * chain.form_matrix(rates[1], msr, fission_yields))
 
 
-def cf4_f1(chain, rates, eql0d, fission_yields=None):
-    return 1 / 2 * chain.form_matrix(rates, eql0d, fission_yields)
+def cf4_f1(chain, rates, msr, fission_yields=None):
+    return 1 / 2 * chain.form_matrix(rates, msr, fission_yields)
 
 
-def cf4_f2(chain, rates, eql0d, fission_yields=None):
-    return (-1 / 2 * chain.form_matrix(rates[0], eql0d, fission_yields)
-            + chain.form_matrix(rates[1], eql0d, fission_yields))
+def cf4_f2(chain, rates, msr, fission_yields=None):
+    return (-1 / 2 * chain.form_matrix(rates[0], msr, fission_yields)
+            + chain.form_matrix(rates[1], msr, fission_yields))
 
 
-def cf4_f3(chain, rates, eql0d, fission_yields=None):
-    return (1 / 4 * chain.form_matrix(rates[0], eql0d, fission_yields)
-            + 1 / 6 * chain.form_matrix(rates[1], eql0d, fission_yields)
-            + 1 / 6 * chain.form_matrix(rates[2], eql0d, fission_yields)
-            - 1 / 12 * chain.form_matrix(rates[3], eql0d, fission_yields))
+def cf4_f3(chain, rates, msr, fission_yields=None):
+    return (1 / 4 * chain.form_matrix(rates[0], msr, fission_yields)
+            + 1 / 6 * chain.form_matrix(rates[1], msr, fission_yields)
+            + 1 / 6 * chain.form_matrix(rates[2], msr, fission_yields)
+            - 1 / 12 * chain.form_matrix(rates[3], msr, fission_yields))
 
 
-def cf4_f4(chain, rates, eql0d, fission_yields=None):
-    return (-1 / 12 * chain.form_matrix(rates[0], eql0d, fission_yields)
-            + 1 / 6 * chain.form_matrix(rates[1], eql0d, fission_yields)
-            + 1 / 6 * chain.form_matrix(rates[2], eql0d, fission_yields)
-            + 1 / 4 * chain.form_matrix(rates[3], eql0d, fission_yields))
+def cf4_f4(chain, rates, msr, fission_yields=None):
+    return (-1 / 12 * chain.form_matrix(rates[0], msr, fission_yields)
+            + 1 / 6 * chain.form_matrix(rates[1], msr, fission_yields)
+            + 1 / 6 * chain.form_matrix(rates[2], msr, fission_yields)
+            + 1 / 4 * chain.form_matrix(rates[3], msr, fission_yields))
 
 
-def rk4_f1(chain, rates, eql0d, fission_yields=None):
-    return 1 / 2 * chain.form_matrix(rates, eql0d, fission_yields)
+def rk4_f1(chain, rates, msr, fission_yields=None):
+    return 1 / 2 * chain.form_matrix(rates, msr, fission_yields)
 
 
-def rk4_f4(chain, rates, eql0d, fission_yields=None):
-    return (1 / 6 * chain.form_matrix(rates[0], eql0d, fission_yields)
-            + 1 / 3 * chain.form_matrix(rates[1], eql0d, fission_yields)
-            + 1 / 3 * chain.form_matrix(rates[2], eql0d, fission_yields)
-            + 1 / 6 * chain.form_matrix(rates[3], eql0d, fission_yields))
+def rk4_f4(chain, rates, msr, fission_yields=None):
+    return (1 / 6 * chain.form_matrix(rates[0], msr, fission_yields)
+            + 1 / 3 * chain.form_matrix(rates[1], msr, fission_yields)
+            + 1 / 3 * chain.form_matrix(rates[2], msr, fission_yields)
+            + 1 / 6 * chain.form_matrix(rates[3], msr, fission_yields))
 
 
 def leqi_f1(chain, inputs, fission_yields):

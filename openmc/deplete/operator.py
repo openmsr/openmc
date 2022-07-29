@@ -162,7 +162,7 @@ class Operator(TransportOperator):
         if ``reduce_chain`` evaluates to true. The default value of
         ``None`` implies no limit on the depth.
 
-    remove_dep_nuc : list of dicts, optional
+    step_removal : list of dicts, optional
         If not empty, depletable nuclides concentrations are changed accordingly
         before solving bateman equation.
 
@@ -220,7 +220,7 @@ class Operator(TransportOperator):
                  fission_yield_mode="constant", fission_yield_opts=None,
                  reaction_rate_mode="direct", reaction_rate_opts=None,
                  reduce_chain=False, reduce_chain_level=None,
-                 remove_dep_nuc=None, k_search=None, eql0d=None):
+                 step_removal=None, keff_control=None):
         # check for old call to constructor
         if isinstance(model, openmc.Geometry):
             msg = "As of version 0.13.0 openmc.deplete.Operator requires an " \
@@ -298,10 +298,8 @@ class Operator(TransportOperator):
                     new_res = res_obj.distribute(self.local_mats, mat_indexes)
                     self.prev_res.append(new_res)
 
-        self.remove_dep_nuc = remove_dep_nuc
-
-        self.k_search = k_search
-        self.eql0d = eql0d
+        self.step_removal = step_removal
+        self.keff_control = keff_control
 
         # Determine which nuclides have incident neutron data
         self.nuclides_with_data = self._get_nuclides_with_data(cross_sections)
@@ -398,7 +396,7 @@ class Operator(TransportOperator):
         self._yield_helper.update_tally_nuclides(nuclides)
 
         # Run OpenMC
-        if self.k_search is not None and "surf_id" in self.k_search.keys():
+        if self.keff_control is not None and "surf_id" in self.keff_control.keys():
             openmc.lib.init_geom() #init_geom defined in core.py
         openmc.lib.run(output=False)
         openmc.lib.reset_timers()
@@ -496,12 +494,14 @@ class Operator(TransportOperator):
 
         return burnable_mats, volume, nuclides
 
-    def make_k_search(self, x, step_index):
-        """Perform a search_for_keff in between depletion iterations.
-
-        If k_search attribute is defined and passed to the operator class,
-        this method will look for critical concentration of fissile nuclide and
-        return modified concentration vector, before solving bateman equation.
+    def make_keff_control(self, x, step_index):
+        """Perform a separate search_for_keff in between depletion iterations
+￼        and returned some optimezd paramters.
+￼        The aim is for example to maintain a reactor critical (k_eff = 1) during
+￼        a depletion analysis, parametrizing some user-defined variables, such as
+￼        geometrical surfaces or cells (mimic for example the extraction of
+￼        control rods) or changing some material composition (reproducing for
+￼        example the effect of a nuclear refueling).
 
         Parameters
         ---------
@@ -515,12 +515,12 @@ class Operator(TransportOperator):
             Nuclides concentration after search_for_keff
 
         """
-        exclude = self.k_search['exclude']
-        tol = self.k_search['tol']
-        target = self.k_search['target']
-        density_limit = self.k_search['density_limit']
+        exclude = self.keff_control['exclude']
+        tol = self.keff_control['tol']
+        target = self.keff_control['target']
+        density_limit = self.keff_control['density_limit']
         # create a copy model instance
-        copy_model = deepcopy(self.model)
+        _model = deepcopy(self.model)
 
         # Get dep. mat ids and nuclides from previous result file
         volume_dict, nucs, burns, full_burns =  self.get_results_info()
@@ -533,14 +533,13 @@ class Operator(TransportOperator):
                 dict[nuc] = x[m][i]  / vol * 1.e-24
             list_of_dict.append(dict)
 
-        def mat_k_search(x,mat_id,range,bracketed_method,mat_comp,exclude,tol,target,density_limit,copy_model,volume_dict,nucs,list_of_dict,*args):
-            #Check if self.k_search['mat_id'] is a valid depletable material id
+        def keff_control_material(x,mat_id,range,bracketed_method,mat_comp,exclude,tol,target,density_limit,copy_model,volume_dict,nucs,list_of_dict,*args):
+            #Check if self.keff_control['mat_id'] is a valid depletable material id
             if str(mat_id) not in volume_dict.keys():
                 msg = (f'Mat_id: {mat_id} is not a valid depletable material id')
                 raise Exception(msg)
 
-            def _create_param_mat_model(param):
-                _model = copy_model
+            def _builder_model(param):
 
                 if args: #this is in case of refueling, we need to modify the geometry before performing the parametrization
                     surf_id = args[0]
@@ -585,7 +584,7 @@ class Operator(TransportOperator):
             lower_range = range[0]
             upper_range = range[1]
             while res==None:
-                search = openmc.search_for_keff(_create_param_mat_model, bracket=[lower_range,upper_range],
+                search = openmc.search_for_keff(_builder_model, bracket=[lower_range,upper_range],
                                         tol=tol, bracketed_method=bracketed_method, target=target, print_iterations=True)
                 # if no erros search algorithm return 3 values, store res and proceed
                 if len(search) == 3:
@@ -611,7 +610,6 @@ class Operator(TransportOperator):
 
                     # If the bracket is above the target
                     else:
-
                         # If k is close enought to target, let's not complicate too much and get directly that value
                         if (np.array(k).min() -target)  < 0.002:
                             index = [idx for idx,i in enumerate(k) if i == np.array(k).min()][0]
@@ -626,16 +624,13 @@ class Operator(TransportOperator):
                     msg = (f'search_for_keff output not contemplated')
                     raise Exception(msg)
 
-
-
-
             #Initialize dict of concentration variation of parametric material
             diff = {}
 
             # Re-convert atom densities result from k_eff search into number of atoms and update x vector
             for m, (id,vol) in enumerate(volume_dict.items()):
                 for i,nuc in enumerate(nucs):
-                        #the self.k_search['fissile'] nuclide atom density is the only change
+                        #the self.keff_control['fissile'] nuclide atom density is the only change
                         if nuc in mat_comp.keys() and id == str(mat_id):
                             # convert atom densities (atom/b-cm) into number of atoms
                             diff[nuc] = x[m][i] - (res * mat_comp[nuc] * vol / 1.e-24)
@@ -644,7 +639,7 @@ class Operator(TransportOperator):
                             continue
             return x, diff
 
-        def geom_k_search(x,surf_id,range,bracketed_method,init_param,exclude,tol,target,density_limit,copy_model,volume_dict,nucs,list_of_dict):
+        def keff_control_geometrical(x,surf_id,range,bracketed_method,init_param,exclude,tol,target,density_limit,copy_model,volume_dict,nucs,list_of_dict):
             # get search_for_keff guess parameter from previous step
             for surf in self.geometry.get_all_surfaces().items():
                     if surf[1].id == surf_id:
@@ -656,8 +651,7 @@ class Operator(TransportOperator):
                             raise Exception(msg)
 
             # define param function
-            def _create_param_geom_model(param):
-                _model = copy_model
+            def _builder_model(param):
                 #find parametric surface and recreate it parametric
                 for surf in _model.geometry.get_all_surfaces().items():
                     if surf[1].id == surf_id:
@@ -696,17 +690,6 @@ class Operator(TransportOperator):
                 tolerance = abs(tol/guess)
 
             while res==None:
-                ## Check if upper limit reached at beginning of every step
-                # if guess + upper_range > range[2]:
-                #     msg = (f'Upper limit reached, stopping depletion')
-                #     msg2 = (f'Upper limit reached, refueling...')
-                #
-                #     if self.k_search['refuel']:
-                #         print(msg2)
-                #         res = init_param
-                #         break #exit the while loop
-                #     else:
-                #         raise Exception(msg)
 
                 #check statistical robustness only if guess is close enough to the upper limit
                 if guess >= abs(range[2])*0.7:
@@ -714,7 +697,7 @@ class Operator(TransportOperator):
                 else:
                     check_brackets = False
                 # do search for keff
-                search = openmc.search_for_keff(_create_param_geom_model,bracket=[guess+lower_range,guess+upper_range], #initial_guess=guess,
+                search = openmc.search_for_keff(_builder_model,bracket=[guess+lower_range,guess+upper_range], #initial_guess=guess,
                                         tol=tolerance,bracketed_method=bracketed_method, target=target,print_iterations=True, check_brackets = check_brackets)
 
                 # if no erros search algorithm return 3 values, store res and proceed
@@ -727,14 +710,13 @@ class Operator(TransportOperator):
                         msg = (f'Upper limit reached, stopping depletion')
                         msg2 = (f'Upper limit reached, refueling...')
 
-                        if self.k_search['refuel']:
+                        if self.keff_control['refuel']:
                             print(msg2)
                             res = init_param
                             break #exit the while loop
                         else:
                             raise Exception(msg)
-
-
+                            
                 # otherwise, search algorithm return 2 values
                 elif len(search) == 2:
                     print ("Invalid range")
@@ -744,7 +726,7 @@ class Operator(TransportOperator):
                         msg = (f'Upper limit reached, stopping depletion')
                         msg2 = (f'Upper limit reached, refueling...')
 
-                        if self.k_search['refuel']:
+                        if self.keff_control['refuel']:
                             print(msg2)
                             res = init_param
                             break #exit the while loop
@@ -754,13 +736,6 @@ class Operator(TransportOperator):
                     # If the bracket range is below the target
                     if np.array(k).prod() < target:
 
-                        # If k is close enought to target (below 0.2%), let's not complicate too much and get directly that value
-                        #if (target - np.array(k).max()) < 0.002:
-                        #    index = [idx for idx,i in enumerate(k) if i == np.array(k).max()][0]
-                        #    res =  guesses[index]
-
-                        # Let's restric the bracket range in a clever way
-                        #else:
                         if (target - np.array(k).prod()) <= 0.02:
                             lower_range = upper_range - 3
                         elif 0.02 < (target - np.array(k).prod()) < 0.03:
@@ -771,14 +746,6 @@ class Operator(TransportOperator):
 
                     # If the bracket is above the target
                     else:
-
-                        # If k is close enought to target, let's not complicate too much and get directly that value
-                        #if (np.array(k).min() -target)  < 0.002:
-                        #    index = [idx for idx,i in enumerate(k) if i == np.array(k).min()][0]
-                        #    res = guesses[index]
-
-                        # Let's restric the bracket range in a clever way
-                        #else:
                         upper_range = lower_range + 2 # same as above
                         lower_range -= abs(range[0])
 
@@ -787,7 +754,7 @@ class Operator(TransportOperator):
                     raise Exception(msg)
 
             # Plotting option, with renaming
-            if 'plot' in self.k_search.keys():
+            if 'plot' in self.keff_control.keys():
                 openmc.plot_geometry(output=False)
                 for plot in os.listdir(os.getcwd()):
                     if plot.endswith('.ppm'):
@@ -807,29 +774,29 @@ class Operator(TransportOperator):
             diff= res - guess
 
             if res == init_param: #this means we have reset the initial level -- > refueling
-                refuel = self.k_search['refuel']
+                refuel = self.keff_control['refuel']
                 range = refuel['range']
                 bracketed_method = refuel['bracketed_method']
                 mat_id = refuel['mat_id']
                 mat_comp = refuel['mat_comp']
                 tol = refuel['tol']
-                x, diff_mat = mat_k_search(x,mat_id,range,bracketed_method,mat_comp,exclude,tol,target,density_limit,copy_model,volume_dict,nucs,list_of_dict,surf_id,res)
+                x, diff_mat = mat_keff_control(x,mat_id,range,bracketed_method,mat_comp,exclude,tol,target,density_limit,copy_model,volume_dict,nucs,list_of_dict,surf_id,res)
 
             return x, diff
 
-        if "mat_id" in self.k_search.keys():
-            mat_id = self.k_search['mat_id']
-            range = self.k_search['range']
-            bracketed_method = self.k_search['bracketed_method']
-            mat_comp = self.k_search['mat_comp']
-            x, diff = mat_k_search(x,mat_id,range,bracketed_method,mat_comp,exclude,tol,target,density_limit,copy_model,volume_dict,nucs,list_of_dict)
+        if "mat_id" in self.keff_control.keys():
+            mat_id = self.keff_control['mat_id']
+            range = self.keff_control['range']
+            bracketed_method = self.keff_control['bracketed_method']
+            mat_comp = self.keff_control['mat_comp']
+            x, diff = mat_keff_control(x,mat_id,range,bracketed_method,mat_comp,exclude,tol,target,density_limit,copy_model,volume_dict,nucs,list_of_dict)
         # Initialize and perform k_eff searching for geometry
-        elif "surf_id" in self.k_search.keys():
-            surf_id = self.k_search['surf_id']
-            range = self.k_search['range']
-            bracketed_method = self.k_search['bracketed_method']
-            init_param = self.k_search['init_param']
-            x, diff = geom_k_search(x,surf_id,range,bracketed_method,init_param,exclude,tol,target,density_limit,copy_model,volume_dict,nucs,list_of_dict)
+        elif "surf_id" in self.keff_control.keys():
+            surf_id = self.keff_control['surf_id']
+            range = self.keff_control['range']
+            bracketed_method = self.keff_control['bracketed_method']
+            init_param = self.keff_control['init_param']
+            x, diff = geom_keff_control(x,surf_id,range,bracketed_method,init_param,exclude,tol,target,density_limit,copy_model,volume_dict,nucs,list_of_dict)
         else:
             msg = (f'keff_search depletion Keys are not recognized')
             raise Exception(msg)
@@ -918,10 +885,10 @@ class Operator(TransportOperator):
 
             self.number.set_atom_density(mat_id, nuclide, number)
 
-    def get_mod_nuc(self, x):
+    def make_step_removal(self, x):
         """ Change depletable material nuclide concentrations
 
-        If remove_dep_nuc attribute is defined and passed to the
+        If step_removal attribute is defined and passed to the
         operator class, this method will modify depletable nuclide
         concentration accordingly, before solving bateman equation.
 
@@ -933,7 +900,7 @@ class Operator(TransportOperator):
         Returns
         -------
         x : list of float
-            Nuclides concentration after change, based of remove_dep_nuc
+            Nuclides concentration after change, based of step_removal
             attribute
 
         """
@@ -943,8 +910,8 @@ class Operator(TransportOperator):
         # get info from get_results_info method
         volume_dict, nucs, burns, full_burns  = self.get_results_info()
         # Iterate list of dicts
-        for item in self.remove_dep_nuc:
-            # find self.k_search['mat_id'] index
+        for item in self.step_removal:
+            # find self.keff_control['mat_id'] index
             m = [idx for idx, mat in enumerate(volume_dict.keys()) if mat == str(item['mat_id'])][0]
             # Iterate all nuclides in depletable materials
             for i,nuc in enumerate(nucs):
