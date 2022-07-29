@@ -13,7 +13,7 @@ _SCALAR_BRACKETED_METHODS = ['brentq', 'brenth', 'ridder', 'bisect']
 
 
 def _search_keff(guess, target, model_builder, model_args, print_iterations,
-                 print_output, guesses, results, batches):
+                 print_output, guesses, results, batches=None ):
     """Function which will actually create our model, run the calculation, and
     obtain the result. This function will be passed to the root finding
     algorithm
@@ -51,7 +51,8 @@ def _search_keff(guess, target, model_builder, model_args, print_iterations,
     # Build the model
     model = model_builder(guess, **model_args)
     # Run the model and obtain keff
-    model.settings.batches = batches
+    if batches is not None:
+        model.settings.batches = batches
     openmc.run(output=print_output)
     sp_filepath = f'statepoint.{str(model.settings.batches)}.h5'
     with openmc.StatePoint(sp_filepath) as sp:
@@ -73,21 +74,32 @@ def check_brackets(batches, model, args, print_iterations, print_output,
 
     cond = False
 
-    while cond == False:
+    while cond is False:
         print(batches)
         guesses_check = []
         results_check = []
-        _search_keff(bracket_0,target,model,model_args,print_iterations,print_output,guesses_check,results_check,batches)
-        _search_keff(bracket_1,target,model,model_args,print_iterations,print_output,guesses_check,results_check,batches)
-        cond1 = np.sign(results_check[0].n - target ) != np.sign(results_check[1].n -target)
-        cond2 = np.sign(results_check[0].n + results_check[0].s - target ) != np.sign(results_check[1].n - results_check[1].s -target)
-        cond3 = np.sign(results_check[0].n - results_check[0].s - target ) != np.sign(results_check[1].n + results_check[1].s -target)
+        _search_keff(bracket_0, target, model, model_args, print_iterations,
+                     print_output, guesses_check, results_check, batches)
+        _search_keff(bracket_1, target, model, model_args, print_iterations,
+                     print_output, guesses_check, results_check, batches)
+        cond1 = (
+        np.sign(results_check[0].n - target ) !=
+        np.sign(results_check[1].n -target)
+        )
+        cond2 = (
+        np.sign(results_check[0].n + results_check[0].s - target ) !=
+        np.sign(results_check[1].n - results_check[1].s -target)
+        )
+        cond3 : (
+        np.sign(results_check[0].n - results_check[0].s - target ) !=
+        np.sign(results_check[1].n + results_check[1].s -target)
+        )
 
-        if (cond1 and cond2 and cond3) or p >= max_p: #Let's put a reasonable maximum to the number of batches
+        if (cond1 and cond2 and cond3) or (batches >= limit):
            cond = True
 
-        elif not cond1 and not cond2 and not cond3:
-            batches *= 2 #if below ot above the target double the batches anyway, will be needed in the next iteration
+        elif (not cond1 and not cond2 and not cond3):
+            batches *= 2
             cond = True
 
         else:
