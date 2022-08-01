@@ -53,6 +53,11 @@ def _search_keff(guess, target, model_builder, model_args, print_iterations,
     # Run the model and obtain keff
     if batches is not None:
         model.settings.batches = batches
+        #this is a temporary workaround, until a nicer solution is found. The
+        # problem is that if one model is initialized in memory no settings
+        # modification are allowed. The only way found was to overright the
+        #settings.xml and run through I/O readings.
+        model.settings.export_to_xml()
     openmc.run(output=print_output)
     sp_filepath = f'statepoint.{str(model.settings.batches)}.h5'
     with openmc.StatePoint(sp_filepath) as sp:
@@ -69,18 +74,16 @@ def _search_keff(guess, target, model_builder, model_args, print_iterations,
 
     return keff.n - target
 
-def check_brackets(batches, model, args, print_iterations, print_output,
+def _check_brackets(batches, model, target, args, print_iterations, print_output,
                    bracket_0, bracket_1, limit=200 ):
-
     cond = False
-
     while cond is False:
         print(batches)
         guesses_check = []
         results_check = []
-        _search_keff(bracket_0, target, model, model_args, print_iterations,
+        _search_keff(bracket_0, target, model, args, print_iterations,
                      print_output, guesses_check, results_check, batches)
-        _search_keff(bracket_1, target, model, model_args, print_iterations,
+        _search_keff(bracket_1, target, model, args, print_iterations,
                      print_output, guesses_check, results_check, batches)
         cond1 = (
         np.sign(results_check[0].n - target ) !=
@@ -90,7 +93,7 @@ def check_brackets(batches, model, args, print_iterations, print_output,
         np.sign(results_check[0].n + results_check[0].s - target ) !=
         np.sign(results_check[1].n - results_check[1].s -target)
         )
-        cond3 : (
+        cond3 = (
         np.sign(results_check[0].n - results_check[0].s - target ) !=
         np.sign(results_check[1].n + results_check[1].s -target)
         )
@@ -226,15 +229,11 @@ def search_for_keff(model_builder, initial_guess=None, target=1.0,
         raise ValueError("Either the 'bracket' or 'initial_guess' parameters "
                          "must be set")
 
-
-
-    # Extract total batches
     batches = model.settings.batches
-
     # Check if the statistic is robust enought before performing the optimization
     if check_brackets:
-        batches = check_brackets(batches, model, args, print_iterations,
-                                 print_output, bracket[0], bracket[1], 200)
+        batches = _check_brackets(batches, model_builder, target, {},
+                    print_iterations, print_output, bracket[0], bracket[1], 200)
 
     # Add information to be passed to the searching function
     args['args'] = (target, model_builder, model_args, print_iterations,
