@@ -300,13 +300,12 @@ def is_statepoint_batch():
     """
     return _dll.openmc_is_statepoint_batch()
 
+
 def init_geom():
-    print("ciao")
-    #_dll._ZN6openmc20free_memory_geometryEv()
-    #_dll._ZN6openmc20free_memory_surfacesEv()
-    #_dll._ZN6openmc17read_geometry_xmlEv()
-    #_dll._ZN6openmc17finalize_geometryEv()
+    """Initialize OpenMC geometry only """
     _dll.openmc_initialize_geometry()
+
+
 def iter_batches():
     """Iterator over batches.
 
