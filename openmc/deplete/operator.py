@@ -699,7 +699,7 @@ class Operator(TransportOperator):
 
             while res == None:
                 #Optional call to check_brackets method in search
-                if guess >= abs(range[2])*0.7:
+                if guess >= abs(range[2])*0.5:
                     check_brackets = True
                 else:
                     check_brackets = False
