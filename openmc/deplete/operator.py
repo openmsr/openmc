@@ -762,13 +762,22 @@ class Operator(TransportOperator):
 
             # Plotting option, with renaming
             if 'plot' in self.keff_control.keys():
+
+                from shutil import move
+
                 if 'plots' not in os.listdir(os.getcwd()):
                     os.mkdir('plots')
+
                 openmc.plot_geometry(output=False)
+
                 for plot in os.listdir(os.getcwd()):
-                    if plot.endswith('.png'):
-                        os.rename(plot, '_'.join([str(step_index),plot.split('_')[1]]))
-                        os.system('mv *.png plots')
+
+                    if plot.startswith('plot_'):
+                        name = '_'.join([plot.split('_')[0],str(step_index)])
+                        suffix = plot.split('.')[1]
+                        rename = '.'.join([name,suffix])
+                        os.rename(plot, rename)
+                        move(rename,'plots')
 
             # Set the root param in the model
             for surf in self.geometry.get_all_surfaces().items():
