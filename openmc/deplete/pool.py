@@ -84,10 +84,14 @@ def deplete(func, chain, x, rates, dt, msr, matrix_func=None):
 ￼       interaction (e.g. transfer of nuclides from one material to another)
 ￼
 ￼       """
-        null_rate = copy.deepcopy(_rates)[0]
+        null_rate = copy.deepcopy(_rates)
+        if len(null_rate) > 1:
+            null_rate = null_rate[0]
         null_rate.fill(0)
         _fission_yields = copy.deepcopy(fission_yields)
-        null_fy=copy.deepcopy(_fission_yields)[0]
+        null_fy=copy.deepcopy(_fission_yields)
+        if len(null_fy) > 1:
+            null_fy = null_fy[0]
         for product, y in null_fy.items():
                 y.yields.fill(0)
 
