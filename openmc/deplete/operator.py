@@ -698,8 +698,8 @@ class Operator(TransportOperator):
                 tolerance = abs(tol/guess)
 
             while res == None:
-                #Optional call to check_brackets method in search
-                if guess >= abs(range[2])*0.5:
+
+                if self.keff_control['refine_search'] and guess >= abs(range[2])*0.5:
                     check_brackets = True
                 else:
                     check_brackets = False
@@ -762,11 +762,13 @@ class Operator(TransportOperator):
 
             # Plotting option, with renaming
             if 'plot' in self.keff_control.keys():
+                if 'plots' not in os.listdir(os.getcwd()):
+                    os.mkdir('plots')
                 openmc.plot_geometry(output=False)
                 for plot in os.listdir(os.getcwd()):
-                    if plot.endswith('.ppm'):
-                        os.rename(plot, '_'.join([plot.split('.ppm')[0],
-                                  str(step_index),'.ppm']))
+                    if plot.endswith('.png'):
+                        os.rename(plot, '_'.join([str(step_index),plot.split('_')[1]]))
+                        os.system('mv *.png plots')
 
             # Set the root param in the model
             for surf in self.geometry.get_all_surfaces().items():
