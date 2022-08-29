@@ -883,7 +883,6 @@ class Integrator(ABC):
             diff_list=[]
 
             for i, (dt, source_rate) in enumerate(self):
-
                 # Solve transport equation (or obtain result from restart)
                 if i > 0 or self.operator.prev_res is None:
                     # Perform step-wise operation (including criticality control)
@@ -904,7 +903,6 @@ class Integrator(ABC):
 
                 # Remove actual EOS concentration for next step
                 conc = conc_list.pop()
-
                 Results.save(self.operator, conc_list, res_list, [t, t + dt],
                              source_rate, self._i_res + i, proc_time)
 
