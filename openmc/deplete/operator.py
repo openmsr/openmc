@@ -602,25 +602,26 @@ class Operator(TransportOperator):
                 else:
                     raise Exception(f'search_for_keff output not contemplated')
 
-            # Update X vector with res
-            diff = {}
+            # Update X vector with result from parametric search
+            diff = dict()
             for idx,burn_id in enumerate(self.burnable_mats):
-                atoms_per_mol = 0 #to calculate the new volume
+                #to calculate the new volume we need total atoms-gram per mol
+                atoms_gram_per_mol = 0
                 for id_nuc,nuc in enumerate(self.number.burnable_nuclides):
                     if nuc in mat_comp.keys() and int(burn_id) == int(mat_id):
                         # Convert res grams into atoms
                         res_atoms = res / openmc.data.atomic_mass(nuc) * openmc.data.AVOGADRO * mat_comp[nuc]
                         diff[nuc] = x[idx][id_nuc] - res_atoms
                         x[idx][id_nuc] += res_atoms
-                    atoms_per_mol += x[idx][id_nuc]*openmc.data.atomic_mass(nuc)
-                # Calculate new volume and assign
-                vol = atoms_per_mol/openmc.data.AVOGADRO/self.materials[int(self.burnable_mats[idx])-1].get_mass_density()
+                    atoms_gram_per_mol += x[idx][id_nuc]*openmc.data.atomic_mass(nuc)
+                # Calculate new volume and assign it in memory
+                vol = atoms_gram_per_mol/openmc.data.AVOGADRO/self.materials[int(self.burnable_mats[idx])-1].get_mass_density()
                 self.number.volume[idx] = vol
             return x, diff
 
         def keff_control_geometrical(x, surf_id, range, bracketed_method,
                                      init_param, tol, target, density_limit):
-
+            # Get guess value coefficient from paramteric surface
             for surf in self.geometry.get_all_surfaces().items():
                     if surf[1].id == surf_id:
                         keys = list(surf[1].coefficients.keys())
@@ -630,6 +631,7 @@ class Operator(TransportOperator):
                             raise Exception(f'Surface coefficients {keys} are not one')
 
             def _model_builder(param):
+                # Set surface value coefficient as the paramteric variable
                 for surf in _model.geometry.get_all_surfaces().items():
                     if surf[1].id == surf_id:
                         keys = list(surf[1].coefficients.keys())
@@ -637,22 +639,20 @@ class Operator(TransportOperator):
                             setattr(surf[1],keys[0],param)
                         else:
                             raise Exception(f'Surface coefficients {keys} are not one')
-
+                # rebuild material file and assign new volume
                 for idx,burn_id in enumerate(self.burnable_mats):
-                    for nuc in _model.materials[int(burn_id)-1].get_nuclides():
-                        _model.materials[int(burn_id)-1].remove_nuclide(nuc)
-                    # add new nuclides and new volume in one go
-                    atoms_per_mol = 0
+                    atoms_gram_per_mol = 0
                     for nuc,val in atoms_vec[idx].items():
-                        if val > density_limit and nuc in self._burnable_nucs:
+                        if val < density_limit or nuc not in self._burnable_nucs:
+                            _model.materials[int(burn_id)-1].remove_nuclide(nuc)
+                        else:
+                            _model.materials[int(burn_id)-1].remove_nuclide(nuc)
                             _model.materials[int(burn_id)-1].add_nuclide(nuc,val,'ao')
-                            atoms_per_mol += val*openmc.data.atomic_mass(nuc)
-                    #ensure density is set
+                            atoms_gram_per_mol += val*openmc.data.atomic_mass(nuc)
+                    #ensure constant density is set and assign new volume
                     density = _model.materials[int(burn_id)-1].get_mass_density()
                     _model.materials[int(burn_id)-1].set_density('g/cm3',density)
-                    # calculate new volume and assign
-                    vol = atoms_per_mol/openmc.data.AVOGADRO/density
-                    self.number.volume[idx] = vol
+                    self.number.volume[idx] = atoms_gram_per_mol/openmc.data.AVOGADRO/density
                 _model.export_to_xml()
                 return _model
 
@@ -660,13 +660,14 @@ class Operator(TransportOperator):
             lower_range = range[0]
             upper_range = range[1]
 
-            #normalize Tolerance for search_for_keff
+            #Reduce tolerance in the range [-1,1] and normalize elsewhere
             if -1.0 < guess < 1.0:
                 tolerance = tol/2
             else:
                 tolerance = abs(tol/guess)
 
             while res == None:
+
                 if self.keff_control['refine_search'] and guess >= abs(range[2])/2:
                     check_brackets = True
                 else:
@@ -679,7 +680,7 @@ class Operator(TransportOperator):
 
                 if len(search) == 3:
                     _res, guesses, k = search
-                    # Further check, in case upper limit get hit
+                    # Further check, in case upper limit gets hit
                     if _res <= range[2]:
                         res = _res
                     else:
@@ -721,6 +722,7 @@ class Operator(TransportOperator):
                 else:
                     raise Exception(f'search_for_keff output not contemplated')
 
+            # If plot argument, create a new plot at each timestep and store it
             if 'plot' in self.keff_control.keys():
                 from shutil import move
                 if 'plots' not in os.listdir(os.getcwd()):
@@ -734,7 +736,7 @@ class Operator(TransportOperator):
                         os.rename(plot, rename)
                         move(rename,'plots')
 
-            # Set res in the self geometry model
+            # Set paramteric result in the geometry model (really needed?)
             for surf in self.geometry.get_all_surfaces().items():
                 if surf[1].id == surf_id:
                     keys = list(surf[1].coefficients.keys())
@@ -754,6 +756,7 @@ class Operator(TransportOperator):
                             refuel['tol'], target, density_limit, surf_id, res)
             return x, diff
 
+        # Call to the functions
         if "mat_id" in self.keff_control.keys():
             x, diff = keff_control_material(x, self.keff_control['mat_id'],
                         self.keff_control['range'], self.keff_control['bracketed_method'],
@@ -957,14 +960,12 @@ class Operator(TransportOperator):
 
         for rank in range(comm.size):
             number_i = comm.bcast(self.number, root=rank)
-
             for mat in number_i.materials:
                 nuclides = []
                 densities = []
                 for nuc in number_i.nuclides:
                     if nuc in self.nuclides_with_data:
                         val = 1.0e-24 * number_i.get_atom_density(mat, nuc)
-
                         # If nuclide is zero, do not add to the problem.
                         if val > 0.0:
                             if self.round_number:
@@ -973,7 +974,6 @@ class Operator(TransportOperator):
                                 val_round = round(val_scaled, 8)
 
                                 val = val_round * 10**val_magnitude
-
                             nuclides.append(nuc)
                             densities.append(val)
                         else:
@@ -990,7 +990,6 @@ class Operator(TransportOperator):
                 #print(f'Mat {mat_internal.name} -> density: {mat_internal.get_density(units="g/cm3")} ')
                 #TODO Update densities on the Python side, otherwise the
                 # summary.h5 file contains densities at the first time step
-
     def _generate_materials_xml(self):
         """Creates materials.xml from self.number.
 
