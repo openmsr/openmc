@@ -733,12 +733,14 @@ class Chain:
         """
         matrix = defaultdict(float)
 
-        _, k = index_msr
+        j, k = index_msr
         mat = msr.burn_mats[k]
+        dest_mat = msr.burn_mats[j]
         for i, nuc in enumerate(self.nuclides):
             elm = re.split(r'\d+', nuc.name)[0]
-            if elm in msr.get_elements(mat):
-                matrix [i, i] = msr.get_removal_rate(mat, elm)
+            if msr.get_destination_mat(mat, elm) == dest_mat:
+                if elm in msr.get_elements(mat):
+                    matrix [i, i] = msr.get_removal_rate(mat, elm)
 
         n = len(self)
         matrix_dok = sp.dok_matrix((n, n))

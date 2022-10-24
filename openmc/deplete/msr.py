@@ -121,7 +121,9 @@ class MsrContinuous:
             Depletable material id to where elements get transferred
         """
         mat = self._get_mat_index(mat)
-        return self.removal_rates[mat][element][1]
+        if element in self.removal_rates[mat]:
+            return self.removal_rates[mat][element][1]
+
 
     def get_elements(self, mat):
         """Extract removing elements for a given material
@@ -621,7 +623,7 @@ class MsrBatchwiseMat(MsrBatchwise):
         Atom density limit below which nuclides are excluded from
         search_for_keff, to be used for speed up.
         Default to 0.0
-        
+
     Attributes
     ----------
     mat_id : int

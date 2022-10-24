@@ -96,6 +96,7 @@ def deplete(func, chain, x, rates, dt, msr=None, matrix_func=None):
             cols = []
             for j in range(msr.n_burn):
                 if (i,j) in matrices.keys():
+                    print(f'{(i,j)}: {len(list(matrices[(i,j)]))}')
                     cols.append(matrices[(i,j)])
                 else:
                     cols.append(None)
