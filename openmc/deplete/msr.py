@@ -146,7 +146,9 @@ class MsrContinuous:
         """
         mat = self._get_mat_id(mat)
         check_type('removal_rate', removal_rate, Real)
+
         if dest_mat is not None:
+            dest_mat = self._get_mat_id(dest_mat)
             #prevent for setting tranfert to material if not set as depletable
             if len(self.burn_mats) > 1:
                 check_value('transfert to material', str(dest_mat),
@@ -154,7 +156,7 @@ class MsrContinuous:
             else:
                 raise ValueError(f'Transfer to material {dest_mat} is set '\
                         'but there is only one depletable material')
-            dest_mat = self._get_mat_id(dest_mat)
+
         if units != '1/s':
             check_value('Units', units, ['1/h', '1/d'])
             if units == '1/h':
@@ -413,11 +415,13 @@ class MsrBatchwise(ABC):
 
         return x, res
 
-    def _save_res(self, step_index, res):
+    def _save_res(self, type, step_index, res):
         """
         Save results to msr_results.h5 file.
         Parameters
         ------------
+        type : str
+            String to characterize geometry and material results
         step_index : int
             depletion time step index
         res : float or dict
@@ -425,7 +429,7 @@ class MsrBatchwise(ABC):
         """
         kwargs = {'mode': "w" if step_index == 0 else "a"}
         with h5py.File('msr_results.h5', **kwargs) as h5:
-            h5.create_dataset(str(step_index), data=res)
+            h5.create_dataset('_'.join([type, str(step_index)]), data=res)
 
 
 class MsrBatchwiseGeom(MsrBatchwise):
@@ -648,9 +652,9 @@ class MsrBatchwiseGeom(MsrBatchwise):
                   'new value: {:.2f} cm'.format(val, res))
 
             #Store results
-            super()._save_res(step_index, res)
+            super()._save_res('geometry', step_index, res)
         else:
-            super()._save_res(step_index, val)
+            super()._save_res('geometry', step_index, val)
         return x
 
 class MsrBatchwiseMat(MsrBatchwise):
@@ -711,7 +715,7 @@ class MsrBatchwiseMat(MsrBatchwise):
         for nuc in refuel_vector.keys():
             check_value("check nuclide exists", nuc,
                         self.operator.nuclides_with_data)
-        if sum(refuel_vector.values()) != 1.0:
+        if round(sum(refuel_vector.values()), 2) != 1.0:
             raise ValueError('Refuel vector fractions {} do not sum up to 1.0'
                              .format(refuel_vector.values()))
         self.refuel_vector = refuel_vector
@@ -834,7 +838,7 @@ class MsrBatchwiseMat(MsrBatchwise):
             mass_dens = [m.get_mass_density() for m in self.model.materials if
                     m.id == int(mat)][0]
             #In the internal version we assign new volume to AtomNumber
-            self.operator.number.volume[i] = atoms_gram_per_mol / AVOGADRO / \
+            self.operator.number.volume[i] = density / AVOGADRO / \
                                              mass_dens
 
         return x
@@ -862,7 +866,76 @@ class MsrBatchwiseMat(MsrBatchwise):
             x = self._update_x_vector_and_volumes(x, res)
 
             #Store results
-            super()._save_res(step_index, res)
+            super()._save_res('material', step_index, res)
         else:
-            super()._save_res(step_index, 0)
+            super()._save_res('material', step_index, 0)
         return  x
+
+class MsrBatchwiseComb(MsrBatchwise):
+    """
+    CA specific class, refuel if bracket upper limit gets hit by the
+    geometical search.
+
+    An instance of this class can be passed directly to an instance of the
+    integrator class, such as :class:`openmc.deplete.CECMIntegrator`.
+
+    Parameters
+    ----------
+    msr_bw_geom : MsrBatchwiseGeom
+        openmc.deplete.msr.MsrBatchwiseGeom object
+    msr_bw_mat : MsrBatchwiseMat
+        openmc.deplete.msr.MsrBatchwiseMat object
+    restart_param : float, optional
+        Level [cm] to restart the geometry before a refuel
+        Default to 0 cm
+    Attributes
+    -----------
+    msr_bw_geom : MsrBatchwiseGeom
+        openmc.deplete.msr.MsrBatchwiseGeom object
+    msr_bw_mat : MsrBatchwiseMat
+        openmc.deplete.msr.MsrBatchwiseMat object
+    restart_param : float, optional
+        Level [cm] to restart the geometry before a refuel
+    """
+
+    def __init__(self, msr_bw_geom, msr_bw_mat, restart_param=0):
+
+        self.msr_bw_g = msr_bw_g
+        self.msr_bw_m = msr_bw_m
+        self.restart_param = restart_param
+
+    def _model_builder(self, param):
+        """
+        Builds the parametric model to be passed to `search_for_keff`.
+        Callable function which builds a model according to a passed
+        parameter. This function must return an openmc.model.Model object.
+        Parameters
+        ------------
+        param : parameter
+            model function variable
+        Returns
+        ------------
+        _model :  openmc.model.Model
+            OpenMC parametric model
+        """
+        pass
+
+    def msr_search_for_keff(self, x, step_index):
+        """
+        Perform the criticality search on the parametric material model.
+        Will set the root of the `search_for_keff` function to the atoms
+        concentrations vector.
+        Parameters
+        ------------
+        x : list of numpy.ndarray
+            Total atoms concentrations
+        Returns
+        ------------
+        x : list of numpy.ndarray
+            Updated total atoms concentrations
+        """
+        x = self.msr_bw_g.msr_search_for_keff(x, step_index)
+        if self.msr_bw_g._get_cell_attrib() >= self.msr_bw_g.bracket_limit[1]:
+            self.msr_bw_g._set_cell_attrib(self.restart_param)
+            x = self.msr_bw_m.msr_search_for_keff(x, step_index)
+        return x
