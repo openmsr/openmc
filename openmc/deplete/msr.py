@@ -900,8 +900,8 @@ class MsrBatchwiseComb(MsrBatchwise):
 
     def __init__(self, msr_bw_geom, msr_bw_mat, restart_param=0):
 
-        self.msr_bw_g = msr_bw_g
-        self.msr_bw_m = msr_bw_m
+        self.msr_bw_geom = msr_bw_geom
+        self.msr_bw_mat = msr_bw_mat
         self.restart_param = restart_param
 
     def _model_builder(self, param):
@@ -934,8 +934,8 @@ class MsrBatchwiseComb(MsrBatchwise):
         x : list of numpy.ndarray
             Updated total atoms concentrations
         """
-        x = self.msr_bw_g.msr_search_for_keff(x, step_index)
-        if self.msr_bw_g._get_cell_attrib() >= self.msr_bw_g.bracket_limit[1]:
-            self.msr_bw_g._set_cell_attrib(self.restart_param)
-            x = self.msr_bw_m.msr_search_for_keff(x, step_index)
+        x = self.msr_bw_geom.msr_search_for_keff(x, step_index)
+        if self.msr_bw_geom._get_cell_attrib() >= self.msr_bw_geom.bracket_limit[1]:
+            self.msr_bw_geom._set_cell_attrib(self.restart_param)
+            x = self.msr_bw_mat.msr_search_for_keff(x, step_index)
         return x
