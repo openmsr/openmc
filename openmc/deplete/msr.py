@@ -793,10 +793,9 @@ class MsrBatchwiseMat(MsrBatchwise):
                                                                          nuc)
                     if int(mat) == self.mat_id:
                         # convert params [grams] into [atoms/cc]
-                        param *= 1.0e-24 / atomic_mass(nuc) * AVOGADRO * \
+                        val += param * 1.0e-24 / atomic_mass(nuc) * AVOGADRO * \
                                self.refuel_vector[nuc] / \
                                self.operator.number.volume[i]
-                        val += param
                     nuclides.append(nuc)
                     densities.append(val)
 
