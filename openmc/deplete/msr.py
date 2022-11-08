@@ -342,7 +342,6 @@ class MsrBatchwise(ABC):
         # Run until a search_for_keff root is found or ouf ot limits
         res = None
         while res == None:
-
             search = search_for_keff(self._model_builder,
                     bracket = [_bracket[0]+val, _bracket[1]+val],
                     tol = _tol,
@@ -790,7 +789,6 @@ class MsrBatchwiseMat(MsrBatchwise):
                             densities.append(val)
 
                 else:
-                    nuclides.append(nuc)
                     val = 1.0e-24 * self.operator.number.get_atom_density(mat,
                                                                          nuc)
                     if int(mat) == self.mat_id:
@@ -798,7 +796,9 @@ class MsrBatchwiseMat(MsrBatchwise):
                         param *= 1.0e-24 / atomic_mass(nuc) * AVOGADRO * \
                                self.refuel_vector[nuc] / \
                                self.operator.number.volume[i]
-                    densities.append(val + param)
+                        val += param
+                    nuclides.append(nuc)
+                    densities.append(val)
 
             openmc.lib.materials[int(mat)].set_densities(nuclides, densities)
         return self.model
