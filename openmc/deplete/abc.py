@@ -844,7 +844,14 @@ class Integrator(ABC):
                     conc, res = self._get_bos_data_from_operator(i, source_rate, conc)
                 else:
                     conc, res = self._get_bos_data_from_restart(i, source_rate, conc)
+
+                    if self.msr_batchwise is not None:
+                        print(conc)
+                        self.msr_batchwise.update_volumes_after_restart(conc)
+                        conc = self._msr_critical_update(i, conc)
+                        print(conc)
                 print('Timestep: {} --> keff: {:.5f}'.format(i, res.k.n))
+
                 # Solve Bateman equations over time interval
                 proc_time, conc_list, res_list = self(conc, res.rates, dt, source_rate, i)
 

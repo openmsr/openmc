@@ -6,6 +6,7 @@ from numbers import Real
 
 import numpy as np
 import h5py
+import os
 
 from openmc.checkvalue import check_type, check_value, check_less_than, \
 check_iterable_type, check_length
@@ -243,7 +244,8 @@ class MsrBatchwise(ABC):
     """
     def __init__(self, operator, model, bracket, bracket_limit,
                  bracketed_method='brentq', tol=0.01, target=1.0,
-                 print_iterations=True, search_for_keff_output=False):
+                 print_iterations=True, search_for_keff_output=False,
+                 nuc_density_limit=1e-20):
 
         self.operator = operator
         self.burn_mats = operator.burnable_mats
@@ -271,6 +273,7 @@ class MsrBatchwise(ABC):
         self.target = target
         self.print_iterations = print_iterations
         self.search_for_keff_output = search_for_keff_output
+        self.nuc_density_limit = nuc_density_limit
 
     @property
     def bracketed_method(self):
@@ -300,6 +303,15 @@ class MsrBatchwise(ABC):
     def target(self, value):
         check_type("target", value, Real)
         self._target = value
+
+    @property
+    def nuc_density_limit(self):
+        return self._nuc_density_limit
+
+    @nuc_density_limit.setter
+    def nuc_density_limit(self, value):
+        check_type("Nuclide density limit", value, Real)
+        self._nuc_density_limit = value
 
     @abstractmethod
     def _model_builder(self, param):
@@ -426,11 +438,44 @@ class MsrBatchwise(ABC):
         res : float or dict
              Root of the search_for_keff function
         """
-        kwargs = {'mode': "w" if step_index == 0 else "a"}
-        with h5py.File('msr_results.h5', **kwargs) as h5:
+        filename = 'msr_results.h5'
+        kwargs = {'mode': "w" if step_index == 0 or os.path.isfile(filename)
+                    else "a"}
+        with h5py.File(filename, **kwargs) as h5:
             h5.create_dataset('_'.join([type, str(step_index)]), data=res)
 
+    def update_volumes_after_restart(self, x):
+        """
+        Updates nuclide densities concentration vector coming from
+        Bateman quations solution and assign to the model in memory.
+        By doing so it also calculates the total number of atoms-grams per mol.
+        This quantity divided by the total mass density gives a volume
+        in cc. This can be inteded as the new material volume if we were to fix
+        the total material mass density. If not set, the volume will remain
+        constant and the density will update at the next depletion step.
+        Parameters
+        ------------
+        x : list of numpy.ndarray
+            Total atom concentrations
+        """
+        self.operator.number.set_density(x)
+        for i, mat in enumerate(self.burn_mats):
+            initial_volume = self.operator.number.volume[i]
+            print(mat, initial_volume)
+            density = 0
+            vals = []
+            for nuc in self.operator.number.nuclides:
+                # get nuclide density [atoms]
+                val = self.operator.number.get_atom_density(mat, nuc) * initial_volume
+                # density in [atoms-g/b-cm-mol]
+                density +=  val * atomic_mass(nuc)
+            # Mass density in [g/cc] that will be kept constant
+            mass_dens = [m.get_mass_density() for m in self.model.materials if
+                    m.id == int(mat)][0]
 
+            #In the internal version we assign new volume to AtomNumber
+            self.operator.number.volume[i] = density / AVOGADRO / mass_dens
+            print(mat, self.operator.number.volume[i])
 class MsrBatchwiseGeom(MsrBatchwise):
     """ MsrBatchwise geoemtrical class
 
@@ -487,10 +532,11 @@ class MsrBatchwiseGeom(MsrBatchwise):
     """
     def __init__(self, operator, model, cell_id_or_name, axis, bracket,
                  bracket_limit, print_iterations=True, bracketed_method='brentq',
-                 tol=0.01, target=1.0):
+                 tol=0.01, target=1.0, nuc_density_limit=1e-20):
 
         super().__init__(operator, model, bracket, bracket_limit,
-                         bracketed_method, tol, target, print_iterations)
+                         bracketed_method, tol, target, print_iterations,
+                         nuc_density_limit)
 
         self.cell_id = self._get_cell_id(cell_id_or_name)
 
@@ -593,12 +639,11 @@ class MsrBatchwiseGeom(MsrBatchwise):
                 # get nuclide density [atoms/b-cm]
                 val = 1.0e-24 * self.operator.number.get_atom_density(mat, nuc)
                 if nuc in self.operator.nuclides_with_data:
-                    if val > 0.0:
+                    if val > self.nuc_density_limit:
                         nuclides.append(nuc)
                         densities.append(val)
                 # density in [atoms-g/b-cm-mol]
                 density +=  val * atomic_mass(nuc)
-
             openmc.lib.materials[int(mat)].set_densities(nuclides, densities)
 
             # Mass density in [g/cc] that will be kept constant
@@ -703,10 +748,11 @@ class MsrBatchwiseMat(MsrBatchwise):
     """
     def __init__(self, operator, model, mat_id_or_name, refuel_vector, bracket,
                  bracket_limit, print_iterations=True, bracketed_method='brentq',
-                 tol=0.01, target=1.0):
+                 tol=0.01, target=1.0, nuc_density_limit=1e-20):
 
         super().__init__(operator, model, bracket, bracket_limit,
-                         bracketed_method, tol, target, print_iterations)
+                         bracketed_method, tol, target, print_iterations,
+                         nuc_density_limit)
 
         self.mat_id = self._get_mat_id(mat_id_or_name)
 
@@ -784,7 +830,7 @@ class MsrBatchwiseMat(MsrBatchwise):
                         # get atoms density [atoms/b-cm]
                         val = 1.0e-24 * \
                               self.operator.number.get_atom_density(mat, nuc)
-                        if val > 0.0:
+                        if val > self.nuc_density_limit:
                             nuclides.append(nuc)
                             densities.append(val)
 
@@ -898,6 +944,10 @@ class MsrBatchwiseComb(MsrBatchwise):
     """
 
     def __init__(self, msr_bw_geom, msr_bw_mat, restart_param=0):
+
+        self.operator = msr_bw_geom.operator
+        self.model = msr_bw_geom.model
+        self.burn_mats = msr_bw_geom.burn_mats
 
         self.msr_bw_geom = msr_bw_geom
         self.msr_bw_mat = msr_bw_mat
