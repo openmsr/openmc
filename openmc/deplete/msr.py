@@ -439,8 +439,7 @@ class MsrBatchwise(ABC):
              Root of the search_for_keff function
         """
         filename = 'msr_results.h5'
-        kwargs = {'mode': "w" if step_index == 0 or os.path.isfile(filename)
-                    else "a"}
+        kwargs = {'mode': "a" if os.path.isfile(filename) else "w"}
         with h5py.File(filename, **kwargs) as h5:
             h5.create_dataset('_'.join([type, str(step_index)]), data=res)
 
@@ -461,7 +460,6 @@ class MsrBatchwise(ABC):
         self.operator.number.set_density(x)
         for i, mat in enumerate(self.burn_mats):
             initial_volume = self.operator.number.volume[i]
-            print(mat, initial_volume)
             density = 0
             vals = []
             for nuc in self.operator.number.nuclides:
@@ -475,7 +473,7 @@ class MsrBatchwise(ABC):
 
             #In the internal version we assign new volume to AtomNumber
             self.operator.number.volume[i] = density / AVOGADRO / mass_dens
-            print(mat, self.operator.number.volume[i])
+
 class MsrBatchwiseGeom(MsrBatchwise):
     """ MsrBatchwise geoemtrical class
 
