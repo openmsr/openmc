@@ -717,20 +717,20 @@ class Chain:
         for i, nuc in enumerate(self.nuclides):
             elm = re.split(r'\d+', nuc.name)[0]
             # Build removal terms matrices
-            if len(index) == 1:
+            if isinstance(index, str):
                 mat = index
                 if elm in msr.get_elements(mat):
                     matrix[i, i] = msr.get_removal_rate(mat, elm)
                 else:
                     matrix[i, i] = 0.0
             #Build trasnfer terms matrices
-            elif len(index) == 2:
+            elif isinstance(index, tuple):
                 dest_mat, mat = index
                 if msr.get_destination_mat(mat, elm) == dest_mat:
                     matrix [i, i] = msr.get_removal_rate(mat, elm)
                 else:
                     matrix[i, i] = 0.0
-
+            #Nothing else is allowed
         n = len(self)
         matrix_dok = sp.dok_matrix((n, n))
         dict.update(matrix_dok, matrix)
