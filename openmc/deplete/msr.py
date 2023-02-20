@@ -212,6 +212,10 @@ class MsrBatchwise(ABC):
     search_for_keff_output : Bool, Optional
         Wheter or not to print transport iterations during  `search_for_keff`.
         Default to False
+    atom_density_limit : float, Optional
+        If set only nuclides with atom density greater than limit are passed
+        to next transport.
+        Default to 0.0
     Attributes
     ----------
     operator : openmc.deplete.Operator
@@ -245,7 +249,7 @@ class MsrBatchwise(ABC):
     def __init__(self, operator, model, bracket, bracket_limit,
                  bracketed_method='brentq', tol=0.01, target=1.0,
                  print_iterations=True, search_for_keff_output=False,
-                 nuc_density_limit=1e-20):
+                 atom_density_limit=0.0):
 
         self.operator = operator
         self.burn_mats = operator.burnable_mats
@@ -273,7 +277,7 @@ class MsrBatchwise(ABC):
         self.target = target
         self.print_iterations = print_iterations
         self.search_for_keff_output = search_for_keff_output
-        self.nuc_density_limit = nuc_density_limit
+        self.atom_density_limit = atom_density_limit
 
     @property
     def bracketed_method(self):
@@ -305,13 +309,13 @@ class MsrBatchwise(ABC):
         self._target = value
 
     @property
-    def nuc_density_limit(self):
-        return self._nuc_density_limit
+    def atom_density_limit(self):
+        return self._atom_density_limit
 
-    @nuc_density_limit.setter
-    def nuc_density_limit(self, value):
-        check_type("Nuclide density limit", value, Real)
-        self._nuc_density_limit = value
+    @atom_density_limit.setter
+    def atom_density_limit(self, value):
+        check_type("Atoms density limit", value, Real)
+        self._atom_density_limit = value
 
     @abstractmethod
     def _model_builder(self, param):
@@ -529,12 +533,13 @@ class MsrBatchwiseGeom(MsrBatchwise):
         translation vector
     """
     def __init__(self, operator, model, cell_id_or_name, axis, bracket,
-                 bracket_limit, print_iterations=True, bracketed_method='brentq',
-                 tol=0.01, target=1.0, nuc_density_limit=1e-20):
+                 bracket_limit, bracketed_method='brentq', tol=0.01, target=1.0,
+                 print_iterations=True, search_for_keff_output=False,
+                 atom_density_limit=1e18):
 
         super().__init__(operator, model, bracket, bracket_limit,
                          bracketed_method, tol, target, print_iterations,
-                         nuc_density_limit)
+                         search_for_keff_output, atom_density_limit)
 
         self.cell_id = self._get_cell_id(cell_id_or_name)
 
@@ -634,10 +639,10 @@ class MsrBatchwiseGeom(MsrBatchwise):
             densities = []
             density = 0
             for nuc in self.operator.number.nuclides:
-                # get nuclide density [atoms/b-cm]
+                # get nuclide density in [atoms/cm3] and convert to [atoms/b-cm]
                 val = 1.0e-24 * self.operator.number.get_atom_density(mat, nuc)
                 if nuc in self.operator.nuclides_with_data:
-                    if val > self.nuc_density_limit:
+                    if val > self.atom_density_limit * 1.0e-24:
                         nuclides.append(nuc)
                         densities.append(val)
                 # density in [atoms-g/b-cm-mol]
@@ -745,12 +750,13 @@ class MsrBatchwiseMat(MsrBatchwise):
         the nuclides str and values are the composition fractions.
     """
     def __init__(self, operator, model, mat_id_or_name, refuel_vector, bracket,
-                 bracket_limit, print_iterations=True, bracketed_method='brentq',
-                 tol=0.01, target=1.0, nuc_density_limit=1e-20):
+                 bracket_limit, bracketed_method='brentq', tol=0.01, target=1.0,
+                 print_iterations=True, search_for_keff_output=False,
+                 atom_density_limit=0.0):
 
         super().__init__(operator, model, bracket, bracket_limit,
                          bracketed_method, tol, target, print_iterations,
-                         nuc_density_limit)
+                         search_for_keff_output, atom_density_limit)
 
         self.mat_id = self._get_mat_id(mat_id_or_name)
 
@@ -828,7 +834,7 @@ class MsrBatchwiseMat(MsrBatchwise):
                         # get atoms density [atoms/b-cm]
                         val = 1.0e-24 * \
                               self.operator.number.get_atom_density(mat, nuc)
-                        if val > self.nuc_density_limit:
+                        if val > self.atom_density_limit:
                             nuclides.append(nuc)
                             densities.append(val)
 
