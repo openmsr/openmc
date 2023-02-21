@@ -834,7 +834,7 @@ class MsrBatchwiseMat(MsrBatchwise):
                         # get atoms density [atoms/b-cm]
                         val = 1.0e-24 * \
                               self.operator.number.get_atom_density(mat, nuc)
-                        if val > self.atom_density_limit:
+                        if val > self.atom_density_limit * 1.0e-24:
                             nuclides.append(nuc)
                             densities.append(val)
 
