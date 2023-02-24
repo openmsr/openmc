@@ -688,7 +688,6 @@ class MsrBatchwiseGeom(MsrBatchwise):
         """
         val = self._get_cell_attrib()
         check_type('Cell coeff', val, Real)
-
         if step_index > 0:
             self._update_materials(x)
             x, res = super()._msr_search_for_keff(x, val)
