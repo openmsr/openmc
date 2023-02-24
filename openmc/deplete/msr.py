@@ -7,6 +7,7 @@ from numbers import Real
 import numpy as np
 import h5py
 import os
+import re
 
 from openmc.checkvalue import check_type, check_value, check_less_than, \
 check_iterable_type, check_length
@@ -445,6 +446,10 @@ class MsrBatchwise(ABC):
         filename = 'msr_results.h5'
         kwargs = {'mode': "a" if os.path.isfile(filename) else "w"}
         with h5py.File(filename, **kwargs) as h5:
+            name = '_'.join([type, str(step_index)])
+            if name in list(h5.keys()):
+                last = sorted([int(re.split('_',i)[1]) for i in h5.keys()])[-1]
+                step_index = last + 1
             h5.create_dataset('_'.join([type, str(step_index)]), data=res)
 
     def update_volumes_after_restart(self, x):
