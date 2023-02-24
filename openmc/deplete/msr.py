@@ -693,11 +693,11 @@ class MsrBatchwiseGeom(MsrBatchwise):
         """
         val = self._get_cell_attrib()
         check_type('Cell coeff', val, Real)
-        if step_index > 0:
+        if step_index > 0 or self.operator.prev_res is not None:
             self._update_materials(x)
             x, res = super()._msr_search_for_keff(x, val)
 
-            # set results value in the geometry model abd continue
+            # set results value in the geometry model and continue
             self._set_cell_attrib(res)
             print('UPDATE: old value: {:.2f} cm --> ' \
                   'new value: {:.2f} cm'.format(val, res))
