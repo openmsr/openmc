@@ -838,16 +838,15 @@ class Integrator(ABC):
                 # Solve transport equation (or obtain result from restart)
                 if i > 0 or self.operator.prev_res is None:
                     # Update geometry/material according to msr batchwise definition
-                    if self.msr_batchwise is not None:
+                    if self.msr_batchwise:
                         conc = self._msr_critical_update(i, conc)
 
                     conc, res = self._get_bos_data_from_operator(i, source_rate, conc)
                 else:
                     conc, res = self._get_bos_data_from_restart(i, source_rate, conc)
-                    # First update material volumes and the run critical update
-                    if self.msr_batchwise is not None:
+                    # Update volume to last value before stop
+                    if self.msr_batchwise:
                         self.msr_batchwise.update_volumes_after_restart(conc)
-                        conc = self._msr_critical_update(i, conc)
 
                 print('Timestep: {} --> keff: {:.5f}'.format(i, res.k.n))
 
@@ -872,6 +871,8 @@ class Integrator(ABC):
             # solve)
             if output and final_step:
                 print(f"[openmc.deplete] t={t} (final operator evaluation)")
+            if self.msr_batchwise:
+                conc = self._msr_critical_update(i+1, conc)
             res_list = [self.operator(conc, source_rate if final_step else 0.0)]
             StepResult.save(self.operator, [conc], res_list, [t, t],
                          source_rate, self._i_res + len(self), proc_time)

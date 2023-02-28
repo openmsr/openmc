@@ -216,7 +216,7 @@ class MsrBatchwise(ABC):
     atom_density_limit : float, Optional
         If set only nuclides with atom density greater than limit are passed
         to next transport.
-        Default to 0.0
+        Default to 0.0 atoms/cm3
     Attributes
     ----------
     operator : openmc.deplete.Operator
@@ -454,13 +454,12 @@ class MsrBatchwise(ABC):
 
     def update_volumes_after_restart(self, x):
         """
-        Updates nuclide densities concentration vector coming from
-        Bateman quations solution and assign to the model in memory.
-        By doing so it also calculates the total number of atoms-grams per mol.
-        This quantity divided by the total mass density gives a volume
-        in cc. This can be inteded as the new material volume if we were to fix
-        the total material mass density. If not set, the volume will remain
-        constant and the density will update at the next depletion step.
+        After a restart the volume at the previous step before the simulation
+        was stopped needs to be realculated, otherwise the similulation initial
+        volume will be assigned. This method use the nuclide concentrations
+        coming from the previous results to calculate the updated volume and
+        assign it to the AtomNumber instance.
+
         Parameters
         ------------
         x : list of numpy.ndarray
@@ -468,20 +467,20 @@ class MsrBatchwise(ABC):
         """
         self.operator.number.set_density(x)
         for i, mat in enumerate(self.burn_mats):
-            initial_volume = self.operator.number.volume[i]
-            density = 0
+            # Total nuclides density
+            nuc_dens = 0
             vals = []
             for nuc in self.operator.number.nuclides:
-                # get nuclide density [atoms]
-                val = self.operator.number.get_atom_density(mat, nuc) * initial_volume
-                # density in [atoms-g/b-cm-mol]
-                density +=  val * atomic_mass(nuc)
-            # Mass density in [g/cc] that will be kept constant
+                # get number of atoms
+                val = self.operator.number[mat, nuc]
+                # obtain nuclide density in atoms-g/mol
+                nuc_dens +=  val * atomic_mass(nuc)
+            # Get mass dens from beginning, intended to be held constant
             mass_dens = [m.get_mass_density() for m in self.model.materials if
                     m.id == int(mat)][0]
 
-            #In the internal version we assign new volume to AtomNumber
-            self.operator.number.volume[i] = density / AVOGADRO / mass_dens
+            #In the CA version we assign the new volume to AtomNumber
+            self.operator.number.volume[i] = nuc_dens / AVOGADRO / mass_dens
 
 class MsrBatchwiseGeom(MsrBatchwise):
     """ MsrBatchwise geoemtrical class
@@ -540,7 +539,7 @@ class MsrBatchwiseGeom(MsrBatchwise):
     def __init__(self, operator, model, cell_id_or_name, axis, bracket,
                  bracket_limit, bracketed_method='brentq', tol=0.01, target=1.0,
                  print_iterations=True, search_for_keff_output=False,
-                 atom_density_limit=1e18):
+                 atom_density_limit=0.0):
 
         super().__init__(operator, model, bracket, bracket_limit,
                          bracketed_method, tol, target, print_iterations,
@@ -629,10 +628,9 @@ class MsrBatchwiseGeom(MsrBatchwise):
         Updates nuclide densities concentration vector coming from
         Bateman quations solution and assign to the model in memory.
         By doing so it also calculates the total number of atoms-grams per mol.
-        This quantity divided by the total mass density gives a volume
-        in cc. This can be inteded as the new material volume if we were to fix
-        the total material mass density. If not set, the volume will remain
-        constant and the density will update at the next depletion step.
+        This quantity divided by the total mass density gives the new volume
+        in cm3 to update. This can be inteded as the new material volume when we
+        keep the material mass density constant.
         Parameters
         ------------
         x : list of numpy.ndarray
@@ -642,23 +640,27 @@ class MsrBatchwiseGeom(MsrBatchwise):
         for i, mat in enumerate(self.burn_mats):
             nuclides = []
             densities = []
-            density = 0
+            #Total nuclides density multiplied by atomic mass
+            nuc_dens_atom_mass = 0
             for nuc in self.operator.number.nuclides:
-                # get nuclide density in [atoms/cm3] and convert to [atoms/b-cm]
-                val = 1.0e-24 * self.operator.number.get_atom_density(mat, nuc)
+                # get atom density in atoms/cm3
+                val = self.operator.number.get_atom_density(mat, nuc)
                 if nuc in self.operator.nuclides_with_data:
-                    if val > self.atom_density_limit * 1.0e-24:
+                    if val > self.atom_density_limit:
                         nuclides.append(nuc)
-                        densities.append(val)
-                # density in [atoms-g/b-cm-mol]
-                density +=  val * atomic_mass(nuc)
+                        # convert to atoms/b-cm
+                        densities.append(val * 1.0e-24)
+                # nuclide density time atomic mass in atoms-g/cm3-mol
+                nuc_dens_atom_mass +=  val * atomic_mass(nuc)
+            #set nuclide densities to model in memory
             openmc.lib.materials[int(mat)].set_densities(nuclides, densities)
 
-            # Mass density in [g/cc] that will be kept constant
+            # Get mass dens from beginning, intended to be held constant
             mass_dens = [m.get_mass_density() for m in self.model.materials if
                     m.id == int(mat)][0]
-            #In the internal version we assign new volume to AtomNumber
-            self.operator.number.volume[i] *= 1.0e24 * density / AVOGADRO /\
+
+            #In the CA version we assign the new volume to AtomNumber
+            self.operator.number.volume[i] *=  nuc_dens_atom_mass/ AVOGADRO /\
                                                 mass_dens
 
     def _model_builder(self, param):
@@ -693,7 +695,7 @@ class MsrBatchwiseGeom(MsrBatchwise):
         """
         val = self._get_cell_attrib()
         check_type('Cell coeff', val, Real)
-        if step_index > 0 or self.operator.prev_res is not None:
+        if step_index > 0:
             self._update_materials(x)
             x, res = super()._msr_search_for_keff(x, val)
 
