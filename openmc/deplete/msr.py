@@ -685,7 +685,7 @@ class MsrBatchwiseGeom(MsrBatchwise):
         Will set the root of the `search_for_keff` function to the cell
         attribute.
         Parameters
-        ------------
+        ----------
         x : list of numpy.ndarray
             Total atoms concentrations
         Returns
@@ -695,19 +695,19 @@ class MsrBatchwiseGeom(MsrBatchwise):
         """
         val = self._get_cell_attrib()
         check_type('Cell coeff', val, Real)
-        if step_index > 0:
-            self._update_materials(x)
-            x, res = super()._msr_search_for_keff(x, val)
 
-            # set results value in the geometry model and continue
-            self._set_cell_attrib(res)
-            print('UPDATE: old value: {:.2f} cm --> ' \
-                  'new value: {:.2f} cm'.format(val, res))
+        # Update densities and volume
+        self._update_materials(x)
+        x, res = super()._msr_search_for_keff(x, val)
 
-            #Store results
-            super()._save_res('geometry', step_index, res)
-        else:
-            super()._save_res('geometry', step_index, val)
+        # set results value as attribute in the geometry
+        self._set_cell_attrib(res)
+        print('UPDATE: old value: {:.2f} cm --> ' \
+              'new value: {:.2f} cm'.format(val, res))
+
+        #Store results
+        super()._save_res('geometry', step_index, res)
+        
         return x
 
 class MsrBatchwiseMat(MsrBatchwise):
