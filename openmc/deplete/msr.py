@@ -654,7 +654,7 @@ class MsrBatchwiseGeom(MsrBatchwise):
                 nuc_dens_atom_mass +=  val * atomic_mass(nuc)
             #set nuclide densities to model in memory
             openmc.lib.materials[int(mat)].set_densities(nuclides, densities)
-
+            
             # Get mass dens from beginning, intended to be held constant
             mass_dens = [m.get_mass_density() for m in self.model.materials if
                     m.id == int(mat)][0]
@@ -707,7 +707,7 @@ class MsrBatchwiseGeom(MsrBatchwise):
 
         #Store results
         super()._save_res('geometry', step_index, res)
-        
+
         return x
 
 class MsrBatchwiseMat(MsrBatchwise):
