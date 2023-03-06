@@ -471,7 +471,7 @@ class MsrBatchwise(ABC):
             nuc_dens = 0
             vals = []
             for nuc in self.operator.number.nuclides:
-                # get number of atoms
+                # total number of atoms
                 val = self.operator.number[mat, nuc]
                 # obtain nuclide density in atoms-g/mol
                 nuc_dens +=  val * atomic_mass(nuc)
@@ -481,7 +481,7 @@ class MsrBatchwise(ABC):
 
             #In the CA version we assign the new volume to AtomNumber
             self.operator.number.volume[i] = nuc_dens / AVOGADRO / mass_dens
-
+            print(mat, mass_dens, self.operator.number.volume[i])
 class MsrBatchwiseGeom(MsrBatchwise):
     """ MsrBatchwise geoemtrical class
 
@@ -654,7 +654,7 @@ class MsrBatchwiseGeom(MsrBatchwise):
                 nuc_dens_atom_mass +=  val * atomic_mass(nuc)
             #set nuclide densities to model in memory
             openmc.lib.materials[int(mat)].set_densities(nuclides, densities)
-            
+
             # Get mass dens from beginning, intended to be held constant
             mass_dens = [m.get_mass_density() for m in self.model.materials if
                     m.id == int(mat)][0]
@@ -662,7 +662,7 @@ class MsrBatchwiseGeom(MsrBatchwise):
             #In the CA version we assign the new volume to AtomNumber
             self.operator.number.volume[i] *=  nuc_dens_atom_mass/ AVOGADRO /\
                                                 mass_dens
-
+            print(mat, mass_dens, self.operator.number.volume[i])
     def _model_builder(self, param):
         """
         Builds the parametric model that is passed to the `msr_search_for_keff`

@@ -840,7 +840,7 @@ class Integrator(ABC):
                     # Update geometry/material according to msr batchwise definition
                     if self.msr_batchwise:
                         conc = self._msr_critical_update(i, conc)
-                        
+
                     conc, res = self._get_bos_data_from_operator(i, source_rate, conc)
                 else:
                     conc, res = self._get_bos_data_from_restart(i, source_rate, conc)
