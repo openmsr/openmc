@@ -600,7 +600,7 @@ class Integrator(ABC):
 
     def __init__(self, operator, timesteps, power=None, power_density=None,
                  source_rates=None, timestep_units='s', solver="cram48",
-                 msr_continuous=None, msr_batchwise=None):
+                 msr_continuous=None, msr_batchwise=None, interrupt=False):
         # Check number of stages previously used
         if operator.prev_res is not None:
             res = operator.prev_res[-1]
@@ -678,6 +678,7 @@ class Integrator(ABC):
 
         self.msr_continuous = msr_continuous
         self.msr_batchwise = msr_batchwise
+        self.interrupt = interrupt
 
         if isinstance(solver, str):
             # Delay importing of cram module, which requires this file
@@ -840,13 +841,17 @@ class Integrator(ABC):
                     # Update geometry/material according to msr batchwise definition
                     if self.msr_batchwise:
                         conc = self._msr_critical_update(i, conc)
-                        
+
                     conc, res = self._get_bos_data_from_operator(i, source_rate, conc)
                 else:
                     conc, res = self._get_bos_data_from_restart(i, source_rate, conc)
                     # Update volume to last value before stop
                     if self.msr_batchwise:
                         self.msr_batchwise.update_volumes_after_restart(conc)
+
+                        if self.interrupt:
+                            conc = self._msr_critical_update(i, conc)
+                            conc, res = self._get_bos_data_from_operator(i, source_rate, conc)
 
                 print('Timestep: {} --> keff: {:.5f}'.format(i, res.k.n))
 
