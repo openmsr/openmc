@@ -481,7 +481,7 @@ class MsrBatchwise(ABC):
 
             #In the CA version we assign the new volume to AtomNumber
             self.operator.number.volume[i] = nuc_dens / AVOGADRO / mass_dens
-            print(mat, mass_dens, self.operator.number.volume[i])
+
 class MsrBatchwiseGeom(MsrBatchwise):
     """ MsrBatchwise geoemtrical class
 
@@ -662,7 +662,7 @@ class MsrBatchwiseGeom(MsrBatchwise):
             #In the CA version we assign the new volume to AtomNumber
             self.operator.number.volume[i] *=  nuc_dens_atom_mass/ AVOGADRO /\
                                                 mass_dens
-            print(mat, mass_dens, self.operator.number.volume[i])
+
     def _model_builder(self, param):
         """
         Builds the parametric model that is passed to the `msr_search_for_keff`
