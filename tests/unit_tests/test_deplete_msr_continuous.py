@@ -53,16 +53,16 @@ def test_get_set(model):
 
     # Test by Openmc material, material name and material id
     material, dest_material = [m for m in model.materials if m.depletable]
-    material_inputs = [material, material.name, material.id]:
+    material_inputs = [material, material.name, material.id]
     dest_material_inputs = [dest_material,
                             dest_material.name,
-                            dest_material.id]:
-    material_inputs = np.array(np.meshgrid(material_inputs
+                            dest_material.id]
+    material_inputs = np.array(np.meshgrid(material_inputs,
                                      dest_material_inputs)).T.reshape(-1, 2)
     for material_input, dest_material_input in material_inputs:
         for element, removal_rate in removal_rates.items():
             msr.set_removal_rate(material_input, [element], removal_rate,
                                  destination_material=dest_material_input)
             assert msr.get_removal_rate(material_input, element) == removal_rate
-            assert msr.get_destination_material(material_input, element) == str(dest_mat.id)
+            assert msr.get_destination_material(material_input, element) == str(dest_material.id)
         assert msr.get_elements(material_input) == removal_rates.keys()
