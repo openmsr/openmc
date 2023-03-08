@@ -11,28 +11,26 @@ from openmc import Materials, Material
 from openmc.data import ELEMENT_SYMBOL
 
 class MsrContinuous:
-    """Class for defining continuous removals and feeds.
+    """Class defining removal rates for continuous nuclides removal or feed.
 
-    Molten Salt Reactors (MSRs) benefit from continuous reprocessing,
-    which removes fission products and feeds fresh fuel into the system. MSRs
-    inspired the development of this class.
-
-    An instance of this class can be passed directly to an instance of one of
-    the :class:`openmc.deplete.Integrator` classes.
+    Molten Salt Reactor (MSR) benefits from continuously reprocessing the fuel
+    salt to remove fission products or to feed fresh fuel into the system. This
+    reactor category inspired the development of this class.
+    An instance of this class can be passed directly to an instance of one of the
+    integrator classes, such as :class:`openmc.deplete.CECMIntegrator`.
 
     .. versionadded:: 0.13.3
+
     Parameters
     ----------
-    operator : openmc.TransportOperator
-        Depletion operator
+    operator : openmc.Operator
+        Operator to perform transport simulations
     model : openmc.Model
-        OpenMC model containing materials and geometry. If using
-        :class:`openmc.deplete.CoupledOperator`, the model must also contain
-        a :class:`opnemc.Settings` object.
+        OpenMC Model object
 
     Attributes
     ----------
-    burnable_mats : list of str
+    burn_mats : list of str
         All burnable material IDs.
     removal_rates : OrderedDict of str and OrderedDict
         Container of removal rates, elements and destination material
@@ -44,48 +42,49 @@ class MsrContinuous:
 
         self.operator = operator
         self.materials = model.materials
-        self.burnable_mats = operator.burnable_mats
+        self.burn_mats = operator.burnable_mats
 
         #initialize removal rates container dict
         self.removal_rates = OrderedDict((mat, OrderedDict()) for mat in \
-                                          self.burnable_mats)
+                                          self.burn_mats)
         self.index_transfer = set()
 
-    def _get_material_id(self, val):
+    def _get_mat_id(self, val):
         """Helper method for getting material id from Material obj or name.
 
         Parameters
         ----------
-        val : openmc.Material or str or int representing material name/id
+        val : Openmc.Material or str or int representing material name/id
 
         Returns
         -------
-        material_id : str
+        id : str
+            Material id
 
         """
         if isinstance(val, Material):
-            check_value('Depeletable Material', str(val.id), self.burnable_mats)
+            check_value('Material depletable', str(val.id), self.burn_mats)
             val = val.id
 
         elif isinstance(val, str):
             if val.isnumeric():
-                check_value('Material ID', str(val), self.burnable_mats)
+                check_value('Material id', str(val), self.burn_mats)
             else:
                 check_value('Material name', val,
                         [mat.name for mat in self.materials if mat.depletable])
                 val = [mat.id for mat in self.materials if mat.name == val][0]
 
         elif isinstance(val, int):
-            check_value('Material ID', str(val), self.burnable_mats)
+            check_value('Material id', str(val), self.burn_mats)
 
         return str(val)
 
-    def get_removal_rate(self, material, element):
+    def get_removal_rate(self, mat, element):
         """Return removal rate for given material and element.
 
         Parameters
         ----------
-        material : openmc.Material or str or int
+        mat : Openmc.Material or str or int
             Depletable material
         element : str
             Element to get removal rate value
@@ -96,38 +95,38 @@ class MsrContinuous:
             Removal rate value
 
         """
-        material_id = self._get_material_id(material)
-        check_value('element', element, ELEMENT_SYMBOL.values())
-        return self.removal_rates[material_id][element][0]
+        mat = self._get_mat_id(mat)
+        check_value('Element', element, ELEMENT_SYMBOL.values())
+        return self.removal_rates[mat][element][0]
 
-    def get_destination_material(self, material, element):
+    def get_destination_material(self, mat, element):
         """Return destination (or transfer) material for given material and
         element, if defined.
 
         Parameters
         ----------
-        material : openmc.Material or str or int
+        mat : Openmc.Material or str or int
             Depletable material
         element : str
             Element that gets transferred to another material.
 
         Returns
         -------
-        destination_material_id : str
-            Depletable material ID to where the element gets transferred
+        destination_mat : str
+            Depletable material id to where the element gets transferred
 
         """
-        material_id = self._get_material_id(mat)
-        check_value('element', element, ELEMENT_SYMBOL.values())
-        if element in self.removal_rates[material_id]:
-            return self.removal_rates[material_id][element][1]
+        mat = self._get_mat_id(mat)
+        check_value('Element', element, ELEMENT_SYMBOL.values())
+        if element in self.removal_rates[mat]:
+            return self.removal_rates[mat][element][1]
 
-    def get_elements(self, material):
+    def get_elements(self, mat):
         """Extract removing elements for a given material
 
         Parameters
         ----------
-        material : openmc.Material or str or int
+        mat : Openmc.Material or str or int
             Depletable material
 
         Returns
@@ -136,17 +135,17 @@ class MsrContinuous:
             List of elements where removal rates exist
 
         """
-        material_id = self._get_material_id(material)
-        if material_id in self.removal_rates.keys():
-            return self.removal_rates[material_id].keys()
+        mat = self._get_mat_id(mat)
+        if mat in self.removal_rates.keys():
+            return self.removal_rates[mat].keys()
 
-    def set_removal_rate(self, material, elements, removal_rate, removal_rate_units='1/s',
+    def set_removal_rate(self, mat, elements, removal_rate, removal_rate_units='1/s',
                          destination_material=None):
-        """Set element removal rates in a depletable material.
+        """Set removal rate to elements in a depletable material.
 
         Parameters
         ----------
-        material : openmc.Material or str or int
+        mat : openmc.Material or str or int
             Depletable material
         elements : list of str
             List of strings of elements that share removal rate
@@ -159,33 +158,33 @@ class MsrContinuous:
             seconds, 'min' means minutes, 'h' means hours, 'a' means Julian years.
 
         """
-        material_id = self._get_material_id(material)
+        mat = self._get_mat_id(mat)
         check_type('removal_rate', removal_rate, Real)
 
         if destination_material is not None:
-            destination_material_id = self._get_material_id(destination_material)
-            if len(self.burnable_mats) > 1:
-                check_value('destination_material', str(destination_material_id),
-                            self.burnable_mats)
+            destination_material = self._get_mat_id(destination_material)
+            if len(self.burn_mats) > 1:
+                check_value('destination_material', str(destination_material),
+                            self.burn_mats)
             else:
-                raise ValueError(f'Transfer to material {destination_material_id} '\
+                raise ValueError(f'Transfer to material {destination_material} '\
                         'is set, but there is only one depletable material')
 
         if removal_rate_units in ('1/s', '1/sec'):
-            unit_conv = 1
+    	    unit_conv = 1
         elif removal_rate_units in ('1/min', '1/minute'):
-            unit_conv = _SECONDS_PER_MINUTE
+    	    unit_conv = _SECONDS_PER_MINUTE
         elif removal_rate_units in ('1/h', '1/hr', '1/hour'):
-            unit_conv = _SECONDS_PER_HOUR
+    	    unit_conv = _SECONDS_PER_HOUR
         elif removal_rate_units in ('1/d', '1/day'):
-            unit_conv = _SECONDS_PER_DAY
+    	    unit_conv = _SECONDS_PER_DAY
         elif removal_rate_units in ('1/a', '1/year'):
-            unit_conv = _SECONDS_PER_JULIAN_YEAR
+    	    unit_conv = _SECONDS_PER_JULIAN_YEAR
         else:
-            raise ValueError("Invalid removal rate unit '{}'".format(removal_rate_units))
+    	    raise ValueError("Invalid removal rate unit '{}'".format(removal_rate_units))
 
         for element in elements:
-            check_value('element', element, ELEMENT_SYMBOL.values())
-            self.removal_rates[material_id][element] = removal_rate / unit_conv, destination_material_id
-            if destination_material_id is not None:
-                self.index_transfer.add((destination_material_id, material_id))
+            check_value('Element', element, ELEMENT_SYMBOL.values())
+            self.removal_rates[mat][element] = removal_rate / unit_conv, destination_material
+            if destination_material is not None:
+                self.index_transfer.add((destination_material, mat))
