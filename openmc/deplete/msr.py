@@ -953,7 +953,7 @@ class MsrBatchwiseComb(MsrBatchwise):
         Level [cm] to restart the geometry before a refuel
     """
 
-    def __init__(self, msr_bw_geom, msr_bw_mat, restart_param=0):
+    def __init__(self, msr_bw_geom, msr_bw_mat=None, restart_param=0):
 
         self.operator = msr_bw_geom.operator
         self.model = msr_bw_geom.model
@@ -995,6 +995,12 @@ class MsrBatchwiseComb(MsrBatchwise):
         """
         x = self.msr_bw_geom.msr_search_for_keff(x, step_index)
         if self.msr_bw_geom._get_cell_attrib() >= self.msr_bw_geom.bracket_limit[1]:
-            self.msr_bw_geom._set_cell_attrib(self.restart_param)
-            x = self.msr_bw_mat.msr_search_for_keff(x, step_index)
+            if self.msr_bw_mat is not None:
+                self.msr_bw_geom._set_cell_attrib(self.restart_param)
+                x = self.msr_bw_mat.msr_search_for_keff(x, step_index)
+            else:
+                from pathlib import Path
+                print(f'Reached maximum of {self.msr_bw_geom.bracket_limit[1]} cm. Exit..')
+                Path('sim.done').touch()
+                exit()
         return x
