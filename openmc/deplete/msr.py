@@ -1004,3 +1004,83 @@ class MsrBatchwiseComb(MsrBatchwise):
                 Path('sim.done').touch()
                 exit()
         return x
+
+class MsrBatchwiseDilute(MsrBatchwise):
+    """
+    CA specific class, refuel if bracket upper limit gets hit by the
+    geometical search.
+
+    An instance of this class can be passed directly to an instance of the
+    integrator class, such as :class:`openmc.deplete.CECMIntegrator`.
+
+    Parameters
+    ----------
+    msr_bw_geom : MsrBatchwiseGeom
+        openmc.deplete.msr.MsrBatchwiseGeom object
+    msr_bw_mat : MsrBatchwiseMat
+        openmc.deplete.msr.MsrBatchwiseMat object
+    restart_param : float, optional
+        Level [cm] to restart the geometry before a refuel
+        Default to 0 cm
+    Attributes
+    -----------
+    msr_bw_geom : MsrBatchwiseGeom
+        openmc.deplete.msr.MsrBatchwiseGeom object
+    msr_bw_mat : MsrBatchwiseMat
+        openmc.deplete.msr.MsrBatchwiseMat object
+    restart_param : float, optional
+        Level [cm] to restart the geometry before a refuel
+    """
+
+    def __init__(self, msr_bw_geom, msr_bw_mat, dilute_interval, restart_param=0):
+
+        self.operator = msr_bw_geom.operator
+        self.model = msr_bw_geom.model
+        self.burn_mats = msr_bw_geom.burn_mats
+
+        self.msr_bw_geom = msr_bw_geom
+        self.msr_bw_mat = msr_bw_mat
+        self.dilute_interval = dilute_interval
+        self.restart_param = restart_param
+
+    def _model_builder(self, param):
+        """
+        Builds the parametric model to be passed to `search_for_keff`.
+        Callable function which builds a model according to a passed
+        parameter. This function must return an openmc.model.Model object.
+        Parameters
+        ------------
+        param : parameter
+            model function variable
+        Returns
+        ------------
+        _model :  openmc.model.Model
+            OpenMC parametric model
+        """
+        pass
+
+    def msr_search_for_keff(self, x, step_index):
+        """
+        Perform the criticality search on the parametric material model.
+        Will set the root of the `search_for_keff` function to the atoms
+        concentrations vector.
+        Parameters
+        ------------
+        x : list of numpy.ndarray
+            Total atoms concentrations
+        Returns
+        ------------
+        x : list of numpy.ndarray
+            Updated total atoms concentrations
+        """
+        if step_index > 0 and step_index % self.dilute_interval == 0:
+            self.msr_bw_geom._set_cell_attrib(self.restart_param)
+            x = self.msr_bw_mat.msr_search_for_keff(x, step_index)
+        else:
+            x = self.msr_bw_geom.msr_search_for_keff(x, step_index)
+            if self.msr_bw_geom._get_cell_attrib() >= self.msr_bw_geom.bracket_limit[1]:
+                from pathlib import Path
+                print(f'Reached maximum of {self.msr_bw_geom.bracket_limit[1]} cm. Exit..')
+                Path('sim.done').touch()
+                exit()
+        return x
