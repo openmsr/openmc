@@ -833,6 +833,8 @@ class Integrator(ABC):
             t, self._i_res = self._get_start_data()
 
             for i, (dt, source_rate) in enumerate(self):
+                if i > 0:
+                    dt = adapt
                 if output:
                     print(f"[openmc.deplete] t={t} s, dt={dt} s, source={source_rate}")
 
@@ -870,6 +872,12 @@ class Integrator(ABC):
 
                 t += dt
 
+                #adaptive timestep
+                err = abs(conc_list[1][0] - conc_list[0][0])
+                x = min((1e19+5e-2*conc_list[1][0])/err)
+                adapt = max(min(0.9*x**(1/(2+1)),5),0.1)
+                print(f'Adapting factor: {adapt}')
+                adapt *= dt
             # Final simulation -- in the case that final_step is False, a zero
             # source rate is passed to the transport operator (which knows to
             # just return zero reaction rates without actually doing a transport
