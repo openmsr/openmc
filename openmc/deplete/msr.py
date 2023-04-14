@@ -342,6 +342,8 @@ class MsrBatchwise(ABC):
         ------------
         x : list of numpy.ndarray
             Atoms concentration vector
+        val : float
+            Previous result value 
         Returns
         ------------
         x : list of numpy.ndarray
