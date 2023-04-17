@@ -875,7 +875,7 @@ class Integrator(ABC):
                 #adaptive timestep
                 err = abs(conc_list[1][0] - conc_list[0][0])
                 x = min((1e19+5e-2*conc_list[1][0])/err)
-                adapt = max(min(0.9*x**(1/(2+1)),5),0.1)
+                adapt = max(min(0.9*x**(1/(2+1)),5),0.5)
                 print(f'Adapting factor: {adapt}')
                 adapt *= dt
             # Final simulation -- in the case that final_step is False, a zero
