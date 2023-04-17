@@ -343,7 +343,7 @@ class MsrBatchwise(ABC):
         x : list of numpy.ndarray
             Atoms concentration vector
         val : float
-            Previous result value 
+            Previous result value
         Returns
         ------------
         x : list of numpy.ndarray
@@ -1034,7 +1034,8 @@ class MsrBatchwiseDilute(MsrBatchwise):
         Level [cm] to restart the geometry before a refuel
     """
 
-    def __init__(self, msr_bw_geom, msr_bw_mat, dilute_interval, restart_param=0):
+    def __init__(self, msr_bw_geom, msr_bw_mat, dilute_interval, restart_param=0,
+                 dilute_at_start=False):
 
         self.operator = msr_bw_geom.operator
         self.model = msr_bw_geom.model
@@ -1044,6 +1045,7 @@ class MsrBatchwiseDilute(MsrBatchwise):
         self.msr_bw_mat = msr_bw_mat
         self.dilute_interval = dilute_interval
         self.restart_param = restart_param
+        self.dilute_at_start = dilute_at_start
 
     def _model_builder(self, param):
         """
@@ -1075,7 +1077,8 @@ class MsrBatchwiseDilute(MsrBatchwise):
         x : list of numpy.ndarray
             Updated total atoms concentrations
         """
-        if step_index > 0 and step_index % self.dilute_interval == 0:
+        if (step_index > 0 and step_index % self.dilute_interval == 0) or \
+           (step_index == 0 and dilute_at_start and step_index % self.dilute_interval == 0):
             self.msr_bw_geom._set_cell_attrib(self.restart_param)
             x = self.msr_bw_mat.msr_search_for_keff(x, step_index)
         else:
