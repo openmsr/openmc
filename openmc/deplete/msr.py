@@ -914,18 +914,18 @@ class MsrBatchwiseMat(MsrBatchwise):
         x : list of numpy.ndarray
             Updated total atoms concentrations
         """
-        if step_index > 0:
-            self.operator.number.set_density(x)
-            self._check_nuclides(self.refuel_vector.keys())
-            x, res = super()._msr_search_for_keff(x, 0)
+        #if step_index > 0:
+        self.operator.number.set_density(x)
+        self._check_nuclides(self.refuel_vector.keys())
+        x, res = super()._msr_search_for_keff(x, 0)
 
-            print('UPDATE: material addition --> {:.2f} g --> '.format(res))
-            x = self._update_x_vector_and_volumes(x, res)
+        print('UPDATE: material addition --> {:.2f} g --> '.format(res))
+        x = self._update_x_vector_and_volumes(x, res)
 
-            #Store results
-            super()._save_res('material', step_index, res)
-        else:
-            super()._save_res('material', step_index, 0)
+        #Store results
+        super()._save_res('material', step_index, res)
+        #else:
+        #    super()._save_res('material', step_index, 0)
         return  x
 
 class MsrBatchwiseComb(MsrBatchwise):
@@ -1078,7 +1078,7 @@ class MsrBatchwiseDilute(MsrBatchwise):
             Updated total atoms concentrations
         """
         if (step_index > 0 and step_index % self.dilute_interval == 0) or \
-           (step_index == 0 and dilute_at_start and step_index % self.dilute_interval == 0):
+        (step_index == 0 and self.dilute_at_start and step_index % self.dilute_interval == 0):
             self.msr_bw_geom._set_cell_attrib(self.restart_param)
             x = self.msr_bw_mat.msr_search_for_keff(x, step_index)
         else:
