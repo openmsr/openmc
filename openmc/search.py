@@ -200,8 +200,14 @@ def search_for_keff(model_builder, initial_guess=None, target=1.0,
 
     # Perform the search
     try:
-        zero_value = root_finder(**args)
+        zero_value, root_res = root_finder(**args, full_output=True, disp=False)
+        
+        if root_res.converged:
+            return zero_value, guesses, results
+
+        else:
+            print(f'root_finder did not converge beacuse of: {root_res.flag}')
+            return guesses, results
+
     except:
         return guesses, results
-
-    return zero_value, guesses, results
