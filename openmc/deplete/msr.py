@@ -334,20 +334,16 @@ class MsrBatchwise(ABC):
             OpenMC parametric model
         """
 
-    def _msr_search_for_keff(self, x, val):
+    def _msr_search_for_keff(self, val):
         """
         Perform the criticality search for a given parametric model.
         It supports geometrical or material based `search_for_keff`.
         Parameters
         ------------
-        x : list of numpy.ndarray
-            Atoms concentration vector
         val : float
             Previous result value
         Returns
         ------------
-        x : list of numpy.ndarray
-            Modified atoms concentration vector
         res : float
             Estimated value of the variable parameter where keff is the
             targeted value
@@ -431,7 +427,7 @@ class MsrBatchwise(ABC):
             else:
                 raise ValueError(f'ERROR: Search_for_keff output is not valid')
 
-        return x, res
+        return res
 
     def _save_res(self, type, step_index, res):
         """
@@ -627,11 +623,12 @@ class MsrBatchwiseGeom(MsrBatchwise):
 
     def _update_materials(self, x):
         """
-        Updates nuclide densities concentration vector coming from
-        Bateman quations solution and assign to the model in memory.
+        Updates concentration vectors coming from Bateman solution at previous
+        timestep, stored in the `AtomNumber` class and assign to the in-memory
+        model materials.
         By doing so it also calculates the total number of atoms-grams per mol.
-        This quantity divided by the total mass density gives the new volume
-        in cm3 to update. This can be inteded as the new material volume when we
+        This quantity divided by the initial total mass density gives units of
+        volume in cm3. This can be inteded as the new material volume when we
         keep the material mass density constant.
         Parameters
         ------------
@@ -695,12 +692,14 @@ class MsrBatchwiseGeom(MsrBatchwise):
         x : list of numpy.ndarray
             Updated total atoms concentrations
         """
+        # Get cell attribute from previous iteration
         val = self._get_cell_attrib()
         check_type('Cell coeff', val, Real)
 
-        # Update densities and volume
+        # Update densities and volume before performing the search_for_keff
         self._update_materials(x)
-        x, res = super()._msr_search_for_keff(x, val)
+        # Calculate new cell attribute
+        res = super()._msr_search_for_keff(val)
 
         # set results value as attribute in the geometry
         self._set_cell_attrib(res)
@@ -836,12 +835,18 @@ class MsrBatchwiseMat(MsrBatchwise):
         for i, mat in enumerate(self.burn_mats):
             nuclides = []
             densities = []
+            if int(mat) == self.mat_id:
+                vol = self.operator.number.volume[i] + param / [m.get_mass_density() for m in self.model.materials if
+                    m.id == int(mat)][0]
+            else:
+                vol = self.operator.number.volume[i]
             for nuc in self.operator.number.nuclides:
                 if nuc not in self.refuel_vector.keys():
                     if nuc in self.operator.nuclides_with_data:
                         # get atoms density [atoms/b-cm]
                         val = 1.0e-24 * \
-                              self.operator.number.get_atom_density(mat, nuc)
+                              self.operator.number.get_atom_density(mat, nuc) * \
+                              self.operator.number.volume[i] / vol
                         if val > self.atom_density_limit * 1.0e-24:
                             nuclides.append(nuc)
                             densities.append(val)
@@ -852,12 +857,12 @@ class MsrBatchwiseMat(MsrBatchwise):
                     if int(mat) == self.mat_id:
                         # convert params [grams] into [atoms/cc]
                         val += param * 1.0e-24 / atomic_mass(nuc) * AVOGADRO * \
-                               self.refuel_vector[nuc] / \
-                               self.operator.number.volume[i]
+                               self.refuel_vector[nuc] / vol
                     nuclides.append(nuc)
                     densities.append(val)
 
             openmc.lib.materials[int(mat)].set_densities(nuclides, densities)
+
         return self.model
 
     def _update_x_vector_and_volumes(self, x, res):
@@ -867,7 +872,7 @@ class MsrBatchwiseMat(MsrBatchwise):
         in cc from the nuclides atom densities, assuming constant material mass
         density. The volume is then passed to the `openmc.deplete.AtomNumber`
         class to renormalize the atoms vector in the model in memory before
-        running the next transport.
+        running the next transport solver.
         Parameters
         ------------
         x : list of numpy.ndarray
@@ -880,24 +885,52 @@ class MsrBatchwiseMat(MsrBatchwise):
             Updated total atoms concentrations
         """
 
-        for i, mat in enumerate(self.burn_mats):
-            density = 0
-            for j, nuc in enumerate(self.operator.number.burnable_nuclides):
-                if nuc in self.refuel_vector.keys() and int(mat) == self.mat_id:
-                    # Convert res grams into atoms
-                    res_atoms = res / atomic_mass(nuc) * AVOGADRO * \
-                                self.refuel_vector[nuc]
-                    x[i][j] += res_atoms
-                # Density in [atoms-g/mol]
-                density += x[i][j] * atomic_mass(nuc)
+        mat_idx = self.burn_mats.index(str(self.mat_id))
+        old_vol = self.operator.number.volume[mat_idx]
+        self.operator.number.volume[mat_idx] += res / [m.get_mass_density() \
+                   for m in self.model.materials if m.id == self.mat_id][0]
 
-            # Mass density in [g/cc] that will be kept constant
-            mass_dens = [m.get_mass_density() for m in self.model.materials if
-                    m.id == int(mat)][0]
-            #In the internal version we assign new volume to AtomNumber
-            self.operator.number.volume[i] = density / AVOGADRO / \
-                                             mass_dens
+        # for nuc_idx, nuc in enumerate(openmc.lib.materials[self.mat_id].nuclides):
+        #     if nuc in self.operator.number.burnable_nuclides:
+        #         x[mat_idx][nuc_idx] = 1e24 * \
+        #             openmc.lib.materials[self.mat_id].densities[nuc_idx] * \
+        #             self.operator.number.volume[mat_idx]
+        #     else:
+        #         self.operator.number.set_atom_density(mat_idx, nuc,
+        #             1e24 * openmc.lib.materials[self.mat_id].densities[nuc_idx])
+        #
+        # # All nuclide in depletion chain + initial nuclides in the simulation
+        # for nuc_idx, nuc in enumerate(self.operator.number.nuclides):
+        #     #nuclide with cross section data (556)
+        #     if nuc in self.operator.nuclides_with_data:
+        #         # All nuclide in depletion chain
+        #         if nuc in self.operator.number.burnable_nuclides:
+        #             index = openmc.lib.materials[self.mat_id].nuclides.index(nuc)
+        #             x[mat_idx][nuc_idx] = 1e24 * \
+        #                 openmc.lib.materials[self.mat_id].densities[index] * \
+        #                 self.operator.number.volume[mat_idx]
+        #         else:
+        #             self.operator.number.set_atom_density(mat_idx, nuc,
+        #                 1e24 * openmc.lib.materials[self.mat_id].densities[nuc_idx])
+        #     else:
+        #         x[mat_idx][nuc_idx] *   self.operator.number.volume[mat_idx] / vol
 
+
+        for nuc, dens in zip(openmc.lib.materials[self.mat_id].nuclides,
+                             openmc.lib.materials[self.mat_id].densities):
+            if nuc in self.operator.number.burnable_nuclides:
+                nuc_idx = self.operator.number.burnable_nuclides.index(nuc)
+                x[mat_idx][nuc_idx] = 1e24 * dens * self.operator.number.volume[mat_idx]
+            else:
+                self.operator.number.set_atom_density(mat_idx, nuc, 1e24 * dens)
+
+        for nuc_idx, nuc in enumerate(self.operator.number.burnable_nuclides):
+            if nuc not in self.operator.nuclides_with_data:
+                x[mat_idx][nuc_idx] *= old_vol / self.operator.number.volume[mat_idx]
+        # for nuc_idx, nuc in enumerate(self.operator.number.burnable_nuclides):
+        #     x[mat_idx][nuc_idx] = 1e24 * \
+        #         openmc.lib.materials[self.mat_id].densities[nuc_idx] * \
+        #         self.operator.number.volume[mat_idx]
         return x
 
     def msr_search_for_keff(self, x, step_index):
@@ -915,11 +948,17 @@ class MsrBatchwiseMat(MsrBatchwise):
             Updated total atoms concentrations
         """
         #if step_index > 0:
+
+        # Update AtomNumber with new conc vectors. Materials are updated
+        # when building the model for the search_for_keff
         self.operator.number.set_density(x)
         self._check_nuclides(self.refuel_vector.keys())
-        x, res = super()._msr_search_for_keff(x, 0)
 
+        # Solve search_for_keff and find new value
+        res = super()._msr_search_for_keff(0)
         print('UPDATE: material addition --> {:.2f} g --> '.format(res))
+
+        #Update con vector and volumes with new value
         x = self._update_x_vector_and_volumes(x, res)
 
         #Store results
@@ -1002,7 +1041,8 @@ class MsrBatchwiseComb(MsrBatchwise):
                 x = self.msr_bw_mat.msr_search_for_keff(x, step_index)
             else:
                 from pathlib import Path
-                print(f'Reached maximum of {self.msr_bw_geom.bracket_limit[1]} cm. Exit..')
+                print(f'Reached maximum of {self.msr_bw_geom.bracket_limit[1]} cm'
+                       ' exit..')
                 Path('sim.done').touch()
                 exit()
         return x
@@ -1085,7 +1125,8 @@ class MsrBatchwiseDilute(MsrBatchwise):
             x = self.msr_bw_geom.msr_search_for_keff(x, step_index)
             if self.msr_bw_geom._get_cell_attrib() >= self.msr_bw_geom.bracket_limit[1]:
                 from pathlib import Path
-                print(f'Reached maximum of {self.msr_bw_geom.bracket_limit[1]} cm. Exit..')
+                print(f'Reached maximum of {self.msr_bw_geom.bracket_limit[1]} cm'
+                       ' exit..')
                 Path('sim.done').touch()
                 exit()
         return x
