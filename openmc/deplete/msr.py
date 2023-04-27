@@ -1075,7 +1075,7 @@ class MsrBatchwiseDilute(MsrBatchwise):
     """
 
     def __init__(self, msr_bw_geom, msr_bw_mat, dilute_interval, restart_param=0,
-                 dilute_at_start=False):
+                 first_dilute=None):
 
         self.operator = msr_bw_geom.operator
         self.model = msr_bw_geom.model
@@ -1083,9 +1083,16 @@ class MsrBatchwiseDilute(MsrBatchwise):
 
         self.msr_bw_geom = msr_bw_geom
         self.msr_bw_mat = msr_bw_mat
-        self.dilute_interval = dilute_interval
         self.restart_param = restart_param
-        self.dilute_at_start = dilute_at_start
+
+        self.first_dilute = first_dilute
+        self.step_interval = dilute_interval
+
+        if self.first_dilute is not None:
+            self.dilute_interval = dilute_interval + self.first_dilute
+        else:
+            self.dilute_interval = dilute_interval
+
 
     def _model_builder(self, param):
         """
@@ -1117,10 +1124,13 @@ class MsrBatchwiseDilute(MsrBatchwise):
         x : list of numpy.ndarray
             Updated total atoms concentrations
         """
-        if (step_index > 0 and step_index % self.dilute_interval == 0) or \
-        (step_index == 0 and self.dilute_at_start and step_index % self.dilute_interval == 0):
+        if step_index in [self.first_dilute, self.dilute_interval]:
             self.msr_bw_geom._set_cell_attrib(self.restart_param)
             x = self.msr_bw_mat.msr_search_for_keff(x, step_index)
+
+            if step_index == self.dilute_interval:
+                self.dilute_interval += self.step_interval
+
         else:
             x = self.msr_bw_geom.msr_search_for_keff(x, step_index)
             if self.msr_bw_geom._get_cell_attrib() >= self.msr_bw_geom.bracket_limit[1]:
