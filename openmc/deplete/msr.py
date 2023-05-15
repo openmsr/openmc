@@ -759,7 +759,7 @@ class MsrBatchwiseMat(MsrBatchwise):
     def __init__(self, operator, model, mat_id_or_name, refuel_vector, bracket,
                  bracket_limit, bracketed_method='brentq', tol=0.01, target=1.0,
                  print_iterations=True, search_for_keff_output=False,
-                 atom_density_limit=0.0):
+                 atom_density_limit=0.0, restart_level=0.0):
 
         super().__init__(operator, model, bracket, bracket_limit,
                          bracketed_method, tol, target, print_iterations,
@@ -775,6 +775,11 @@ class MsrBatchwiseMat(MsrBatchwise):
             raise ValueError('Refuel vector fractions {} do not sum up to 1.0'
                              .format(refuel_vector.values()))
         self.refuel_vector = refuel_vector
+
+        if not isinstance(restart_level, (float, int)):
+            raise ValueError(f'{restart_level} is of type {type(restart_level)}, while it should be int or float')
+        else:
+            self.restart_level = restart_level
 
     def _check_nuclides(self, nucs):
         """Checks if refueling nuclides exist in the parametric material.
@@ -955,7 +960,7 @@ class MsrBatchwiseMat(MsrBatchwise):
         self._check_nuclides(self.refuel_vector.keys())
 
         # Solve search_for_keff and find new value
-        res = super()._msr_search_for_keff(0)
+        res = super()._msr_search_for_keff(self.restart_level)
         print('UPDATE: material addition --> {:.2f} g --> '.format(res))
 
         #Update con vector and volumes with new value
@@ -963,8 +968,7 @@ class MsrBatchwiseMat(MsrBatchwise):
 
         #Store results
         super()._save_res('material', step_index, res)
-        #else:
-        #    super()._save_res('material', step_index, 0)
+        super()._save_res('geometry', step_index, self.restart_level)
         return  x
 
 class MsrBatchwiseComb(MsrBatchwise):
@@ -981,20 +985,15 @@ class MsrBatchwiseComb(MsrBatchwise):
         openmc.deplete.msr.MsrBatchwiseGeom object
     msr_bw_mat : MsrBatchwiseMat
         openmc.deplete.msr.MsrBatchwiseMat object
-    restart_param : float, optional
-        Level [cm] to restart the geometry before a refuel
-        Default to 0 cm
     Attributes
     -----------
     msr_bw_geom : MsrBatchwiseGeom
         openmc.deplete.msr.MsrBatchwiseGeom object
     msr_bw_mat : MsrBatchwiseMat
         openmc.deplete.msr.MsrBatchwiseMat object
-    restart_param : float, optional
-        Level [cm] to restart the geometry before a refuel
     """
 
-    def __init__(self, msr_bw_geom, msr_bw_mat=None, restart_param=0):
+    def __init__(self, msr_bw_geom, msr_bw_mat=None):
 
         self.operator = msr_bw_geom.operator
         self.model = msr_bw_geom.model
@@ -1002,7 +1001,6 @@ class MsrBatchwiseComb(MsrBatchwise):
 
         self.msr_bw_geom = msr_bw_geom
         self.msr_bw_mat = msr_bw_mat
-        self.restart_param = restart_param
 
     def _model_builder(self, param):
         """
@@ -1037,7 +1035,7 @@ class MsrBatchwiseComb(MsrBatchwise):
         x = self.msr_bw_geom.msr_search_for_keff(x, step_index)
         if self.msr_bw_geom._get_cell_attrib() >= self.msr_bw_geom.bracket_limit[1]:
             if self.msr_bw_mat is not None:
-                self.msr_bw_geom._set_cell_attrib(self.restart_param)
+                self.msr_bw_geom._set_cell_attrib(self.msr_bw_mat.restart_level)
                 x = self.msr_bw_mat.msr_search_for_keff(x, step_index)
             else:
                 from pathlib import Path
@@ -1061,21 +1059,15 @@ class MsrBatchwiseDilute(MsrBatchwise):
         openmc.deplete.msr.MsrBatchwiseGeom object
     msr_bw_mat : MsrBatchwiseMat
         openmc.deplete.msr.MsrBatchwiseMat object
-    restart_param : float, optional
-        Level [cm] to restart the geometry before a refuel
-        Default to 0 cm
     Attributes
     -----------
     msr_bw_geom : MsrBatchwiseGeom
         openmc.deplete.msr.MsrBatchwiseGeom object
     msr_bw_mat : MsrBatchwiseMat
         openmc.deplete.msr.MsrBatchwiseMat object
-    restart_param : float, optional
-        Level [cm] to restart the geometry before a refuel
     """
 
-    def __init__(self, msr_bw_geom, msr_bw_mat, dilute_interval, restart_param=0,
-                 first_dilute=None):
+    def __init__(self, msr_bw_geom, msr_bw_mat, dilute_interval, first_dilute=None):
 
         self.operator = msr_bw_geom.operator
         self.model = msr_bw_geom.model
@@ -1083,7 +1075,6 @@ class MsrBatchwiseDilute(MsrBatchwise):
 
         self.msr_bw_geom = msr_bw_geom
         self.msr_bw_mat = msr_bw_mat
-        self.restart_param = restart_param
 
         self.first_dilute = first_dilute
         self.step_interval = dilute_interval
@@ -1125,7 +1116,7 @@ class MsrBatchwiseDilute(MsrBatchwise):
             Updated total atoms concentrations
         """
         if step_index in [self.first_dilute, self.dilute_interval]:
-            self.msr_bw_geom._set_cell_attrib(self.restart_param)
+            self.msr_bw_geom._set_cell_attrib(self.msr_bw_mat.restart_level)
             x = self.msr_bw_mat.msr_search_for_keff(x, step_index)
 
             if step_index == self.dilute_interval:
