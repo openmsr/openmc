@@ -841,7 +841,7 @@ class Integrator(ABC):
                 # Solve transport equation (or obtain result from restart)
                 if i > 0 or self.operator.prev_res is None:
                     # Update geometry/material according to msr batchwise definition
-                    if self.msr_batchwise:
+                    if self.msr_batchwise and source_rate != 0.0:
                         conc = self._msr_critical_update(i, conc)
 
                     conc, res = self._get_bos_data_from_operator(i, source_rate, conc)
