@@ -265,12 +265,12 @@ class MsrBatchwise(ABC):
         check_length('bracket_limit', bracket_limit, 2)
         check_less_than('bracket limit values',
                          bracket_limit[0], bracket_limit[1])
-        if bracket_limit[0] > bracket[0]:
-            raise ValueError('Lower bracket limit {} is greater than lower '
-                             'bracket {}'.format(bracket_limit[0], bracket[0]))
-        if bracket_limit[1] < bracket[0]:
-            raise ValueError('Upper bracket limit {} is less than upper '
-                             'bracket {}'.format(bracket_limit[1], bracket[1]))
+        # if bracket_limit[0] > bracket[0]:
+        #     raise ValueError('Lower bracket limit {} is greater than lower '
+        #                      'bracket {}'.format(bracket_limit[0], bracket[0]))
+        # if bracket_limit[1] < bracket[0]:
+        #     raise ValueError('Upper bracket limit {} is less than upper '
+        #                      'bracket {}'.format(bracket_limit[1], bracket[1]))
         self.bracket_limit = bracket_limit
 
         self.bracketed_method = bracketed_method
