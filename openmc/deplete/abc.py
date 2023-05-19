@@ -884,7 +884,7 @@ class Integrator(ABC):
             # solve)
             if output and final_step:
                 print(f"[openmc.deplete] t={t} (final operator evaluation)")
-            if self.msr_batchwise:
+            if self.msr_batchwise and source_rate != 0.0:
                 conc = self._msr_critical_update(i+1, conc)
             res_list = [self.operator(conc, source_rate if final_step else 0.0)]
             StepResult.save(self.operator, [conc], res_list, [t, t],
