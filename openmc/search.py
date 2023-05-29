@@ -6,7 +6,8 @@ import scipy.optimize as sopt
 import openmc
 import openmc.model
 import openmc.checkvalue as cv
-
+import openmc.lib
+from openmc.mpi import comm
 
 _SCALAR_BRACKETED_METHODS = ['brentq', 'brenth', 'ridder', 'bisect']
 
@@ -51,8 +52,9 @@ def _search_keff(guess, target, model_builder, model_args, print_iterations,
     model = model_builder(guess, **model_args)
 
     # Run the model and obtain keff
-    sp_filepath = model.run(**run_args)
-    with openmc.StatePoint(sp_filepath) as sp:
+    openmc.lib.run(**run_args)
+    statepoint = f'statepoint.{model.settings.batches}.h5'
+    with openmc.StatePoint(statepoint) as sp:
         keff = sp.keff
 
     # Record the history
