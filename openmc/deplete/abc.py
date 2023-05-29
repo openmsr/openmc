@@ -849,7 +849,7 @@ class Integrator(ABC):
                     conc, res = self._get_bos_data_from_restart(i, source_rate, conc)
                     # Update volume to last value before stop
                     if self.msr_batchwise:
-                        self.msr_batchwise.update_volumes_after_restart(conc)
+                        self.msr_batchwise._update_volumes_after_depletion(conc)
 
                         if self.interrupt:
                             conc = self._msr_critical_update(i, conc)
