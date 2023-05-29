@@ -416,12 +416,14 @@ class MsrBatchwise(ABC):
         """
         filename = 'msr_results.h5'
         kwargs = {'mode': "a" if os.path.isfile(filename) else "w"}
-        with h5py.File(filename, **kwargs) as h5:
-            name = '_'.join([type, str(step_index)])
-            if name in list(h5.keys()):
-                last = sorted([int(re.split('_',i)[1]) for i in h5.keys()])[-1]
-                step_index = last + 1
-            h5.create_dataset('_'.join([type, str(step_index)]), data=res)
+
+        if comm.rank == 0:
+            with h5py.File(filename, **kwargs) as h5:
+                name = '_'.join([type, str(step_index)])
+                if name in list(h5.keys()):
+                    last = sorted([int(re.split('_',i)[1]) for i in h5.keys()])[-1]
+                    step_index = last + 1
+                h5.create_dataset('_'.join([type, str(step_index)]), data=res)
 
     def _update_volumes_after_depletion(self, x):
         """
@@ -441,23 +443,26 @@ class MsrBatchwise(ABC):
             Total atom concentrations
         """
         self.operator.number.set_density(x)
-        
-        for i, mat in enumerate(self.burn_mats):
-            # Total nuclides density
-            dens = 0
-            vals = []
-            for nuc in self.operator.number.nuclides:
-                # total number of atoms
-                val = self.operator.number[mat, nuc]
-                # obtain nuclide density in atoms-g/mol
-                dens +=  val * atomic_mass(nuc)
-            # Get mass dens from beginning, intended to be held constant
-            rho = openmc.lib.materials[int(mat)].get_density('g/cm3')
-            #rho = [m.get_mass_density() for m in self.model.materials if
-            #        m.id == int(mat)][0]
 
-            #In the CA version we assign the new volume to AtomNumber
-            self.operator.number.volume[i] = dens / AVOGADRO / rho
+        for rank in range(comm.size):
+            number_i = comm.bcast(self.operator.number, root=rank)
+
+            for i, mat in enumerate(number_i.materials):
+                # Total nuclides density
+                dens = 0
+                vals = []
+                for nuc in number_i.nuclides:
+                    # total number of atoms
+                    val = number_i[mat, nuc]
+                    # obtain nuclide density in atoms-g/mol
+                    dens +=  val * atomic_mass(nuc)
+                # Get mass dens from beginning, intended to be held constant
+                rho = openmc.lib.materials[int(mat)].get_density('g/cm3')
+                #rho = [m.get_mass_density() for m in self.model.materials if
+                #        m.id == int(mat)][0]
+
+                #In the CA version we assign the new volume to AtomNumber
+                number_i.volume[i] = dens / AVOGADRO / rho
 
 class MsrBatchwiseGeom(MsrBatchwise):
     """ MsrBatchwise geoemtrical class
