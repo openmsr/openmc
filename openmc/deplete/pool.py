@@ -6,7 +6,7 @@ from itertools import repeat, starmap
 from multiprocessing import Pool
 from scipy.sparse import bmat
 import numpy as np
-
+from openmc.mpi import comm
 
 # Configurable switch that enables / disables the use of
 # multiprocessing routines during depletion
@@ -16,6 +16,27 @@ USE_MULTIPROCESSING = True
 # calculations
 NUM_PROCESSES = None
 
+def _distribute(items):
+    """Distribute items across MPI communicator
+
+    Parameters
+    ----------
+    items : list
+        List of items of distribute
+
+    Returns
+    -------
+    list
+        Items assigned to process that called
+
+    """
+    min_size, extra = divmod(len(items), comm.size)
+    j = 0
+    for i in range(comm.size):
+        chunk_size = min_size + int(i < extra)
+        if comm.rank == i:
+            return items[j:j + chunk_size]
+        j += chunk_size
 
 def deplete(func, chain, x, rates, dt, matrix_func=None, msr=None):
     """Deplete materials using given reaction rates for a specified time
@@ -87,48 +108,64 @@ def deplete(func, chain, x, rates, dt, matrix_func=None, msr=None):
 
     if msr is not None:
         # calculate removal rates terms as diagonal matrices
-        removal = map(chain.form_rr_term, repeat(msr), msr.burn_mats)
+        removal = map(chain.form_rr_term, repeat(msr), msr.local_mats)
         #subtract removal rates terms from bateman matrices
         matrices = [mat1 - mat2 for (mat1, mat2) in zip(matrices, removal)]
 
         if len(msr.index_transfer) > 0:
-            # calculate transfer rates terms as diagonal matrices
-            transfer = list(map(chain.form_rr_term, repeat(msr),
+
+            matrices = comm.gather(matrices, root=0)
+            x_comb = comm.gather(x, root=0)
+
+            if comm.rank == 0:
+
+                matrices = [elm for matrice in matrices for elm in matrice]
+                x_comb = [x_elm for x_mat in x_comb for x_elm in x_mat]
+
+                # calculate transfer rates terms as diagonal matrices
+                transfer = list(map(chain.form_rr_term, repeat(msr),
                                 msr.index_transfer))
 
-            # Combine all matrices together in a single matrix of matrices
-            # to be solved in one-go
-            n_rows = n_cols = len(msr.burn_mats)
-            rows = []
-            for row in range(n_rows):
-                cols = []
-                for col in range(n_cols):
-                    if row == col:
-                        # Fill the diagonals with the Bateman matrices
-                        cols.append(matrices[row])
-                    elif (msr.burn_mats[row], msr.burn_mats[col]) in \
+                # Combine all matrices together in a single matrix of matrices
+                # to be solved in one-go
+                n_rows = n_cols = len(msr.burn_mats)
+                rows = []
+                for row in range(n_rows):
+                    cols = []
+                    for col in range(n_cols):
+                        if row == col:
+                            # Fill the diagonals with the Bateman matrices
+                            cols.append(matrices[row])
+                        elif (msr.burn_mats[row], msr.burn_mats[col]) in \
                                     msr.index_transfer:
 
-                        index = list(msr.index_transfer).index( \
+                            index = list(msr.index_transfer).index( \
                                     (msr.burn_mats[row], msr.burn_mats[col]))
-                        # Fill the off-diagonals with the transfer matrices
-                        cols.append(transfer[index])
-                    else:
-                        cols.append(None)
-                rows.append(cols)
-            matrix = bmat(rows)
+                            # Fill the off-diagonals with the transfer matrices
+                            cols.append(transfer[index])
+                        else:
+                            cols.append(None)
+                    rows.append(cols)
+                matrix = bmat(rows)
 
-            #concatenate vectors of nuclides in one
-            _x = np.concatenate([xx for xx in x])
-            x_result = func(matrix, _x, dt)
+                #concatenate vectors of nuclides in one
+                _x = np.concatenate([xx for xx in x_comb])
+                x_result = func(matrix, _x, dt)
 
-            # Split back the nuclide vector result into the original form
-            x_result = np.split(x_result, np.cumsum([len(i) for i in x])[:-1])
+                # Split back the nuclide vector result into the original form
+                x_result = np.split(x_result, np.cumsum([len(i) for i in x_comb])[:-1])
+
+            else:
+                x_result = None
+
+            x_result = comm.bcast(x_result, root=0)
+
+            x_result = _distribute(x_result)
 
             return x_result
 
     inputs = zip(matrices, x, repeat(dt))
-    
+
     if USE_MULTIPROCESSING:
         with Pool(NUM_PROCESSES) as pool:
             x_result = list(pool.starmap(func, inputs))
