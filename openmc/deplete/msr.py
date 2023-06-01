@@ -45,6 +45,7 @@ class MsrContinuous:
         self.operator = operator
         self.materials = model.materials
         self.burn_mats = operator.burnable_mats
+        self.local_mats = operator.local_mats
 
         #initialize removal rates container dict
         self.removal_rates = OrderedDict((mat, OrderedDict()) for mat in \
@@ -155,7 +156,7 @@ class MsrContinuous:
             #prevent for setting tranfert to material if not set as depletable
             if len(self.burn_mats) > 1:
                 check_value('transfert to material', str(dest_mat),
-                            self.burn_mats)
+                                self.burn_mats)
             else:
                 raise ValueError(f'Transfer to material {dest_mat} is set '\
                         'but there is only one depletable material')
@@ -662,6 +663,7 @@ class MsrBatchwiseGeom(MsrBatchwise):
 
         # Update volume and concentration vectors before performing the search_for_keff
         self._update_materials(x)
+
         # Calculate new cell attribute
         res = super()._msr_search_for_keff(val)
 
