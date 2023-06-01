@@ -7,7 +7,6 @@ import openmc
 import openmc.model
 import openmc.checkvalue as cv
 import openmc.lib
-from openmc.mpi import comm
 
 _SCALAR_BRACKETED_METHODS = ['brentq', 'brenth', 'ridder', 'bisect']
 
