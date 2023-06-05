@@ -441,7 +441,7 @@ class MsrBatchwise(ABC):
             Total atom concentrations
         """
         self.operator.number.set_density(x)
-        
+
         for i, mat in enumerate(self.burn_mats):
             # Total nuclides density
             dens = 0
@@ -1398,6 +1398,9 @@ class MsrBatchwiseWrap2():
             self.dilute_interval = dilute_interval + self.first_dilute
         else:
             self.dilute_interval = dilute_interval
+
+    def _update_volumes_after_depletion(self, x):
+        self.msr_bw_geom._update_volumes_after_depletion(x)
 
     def msr_search_for_keff(self, x, step_index):
         """
