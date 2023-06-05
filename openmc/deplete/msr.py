@@ -230,6 +230,7 @@ class MsrBatchwise(ABC):
 
         self.operator = operator
         self.burn_mats = operator.burnable_mats
+        self.local_mats = operator.local_mats
         self.model = model
 
         check_iterable_type('bracket', bracket, Real)
@@ -1035,52 +1036,56 @@ class MsrBatchwiseMatRefuel(MsrBatchwiseMat):
         _model :  openmc.model.Model
             OpenMC parametric model
         """
+        for rank in range(comm.size):
+            number_i = comm.bcast(self.operator.number, root=rank)
+            #for i, mat in enumerate(self.burn_mats):
+            for i,mat in enumerate(number_i.materials):
+                nuclides = []
+                densities = []
 
-        for i, mat in enumerate(self.burn_mats):
-            nuclides = []
-            densities = []
+                if int(mat) in self.mats_id:
+                    # parametrize volume, keeping mass density constant
+                    vol = number_i.volume[i] + param / \
+                        [m.get_mass_density() for m in self.model.materials
+                            if m.id == int(mat)][0]
+                        #openmc.lib.materials[int(mat)].get_density('g/cm3')
 
-            if int(mat) in self.mats_id:
-                # parametrize volume, keeping mass density constant
-                vol = self.operator.number.volume[i] + param / \
-                    [m.get_mass_density() for m in self.model.materials if m.id == int(mat)][0]
-                    #openmc.lib.materials[int(mat)].get_density('g/cm3')
-
-                for nuc in self.operator.number.nuclides:
-                    #assuming nuclides in material vector are always present in cross sections data
-                    if nuc in self.mat_vector:
-                        # units [#atoms/cm-b]
-                        val = 1.0e-24 * self.operator.number.get_atom_density(mat,nuc)
-                        # parametrize concentration
-                        # need to convert params [grams] into [#atoms/cm-b]
-                        val += 1.0e-24 * param / atomic_mass(nuc) * AVOGADRO * \
-                               self.mat_vector[nuc] / vol
-
-                        if val > self.atom_density_limit:
-                            nuclides.append(nuc)
-                            densities.append(val)
-                    else:
-                        if nuc in self.operator.nuclides_with_data:
-                            # get normalized atoms density in [atoms/b-cm]
-                            val = 1.0e-24 * self.operator.number.get_atom_density(mat, nuc) * \
-                                self.operator.number.volume[i] / vol
+                    for nuc in number_i.nuclides:
+                        #assuming nuclides in material vector are always present
+                        # in cross sections data
+                        if nuc in self.mat_vector:
+                            # units [#atoms/cm-b]
+                            val = 1.0e-24 * number_i.get_atom_density(mat,nuc)
+                            # parametrize concentration
+                            # need to convert params [grams] into [#atoms/cm-b]
+                            val += 1.0e-24 * param / atomic_mass(nuc) * \
+                                   AVOGADRO * self.mat_vector[nuc] / vol
 
                             if val > self.atom_density_limit:
                                 nuclides.append(nuc)
                                 densities.append(val)
+                        else:
+                            if nuc in self.operator.nuclides_with_data:
+                                # get normalized atoms density in [atoms/b-cm]
+                                val = 1.0e-24 * number_i.get_atom_density(mat,
+                                      nuc) * number_i.volume[i] / vol
 
-            else:
-                # for all other materials, still check atom density limits
-                for nuc in self.operator.number.nuclides:
-                    if nuc in self.operator.nuclides_with_data:
-                        # get normalized atoms density in [atoms/b-cm]
-                        val = 1.0e-24 * self.operator.number.get_atom_density(mat, nuc)
-                        if val > self.atom_density_limit:
-                            nuclides.append(nuc)
-                            densities.append(val)
+                                if val > self.atom_density_limit:
+                                    nuclides.append(nuc)
+                                    densities.append(val)
 
-            #set nuclides and densities to the in-memory model
-            openmc.lib.materials[int(mat)].set_densities(nuclides, densities)
+                else:
+                    # for all other materials, still check atom density limits
+                    for nuc in number_i.nuclides:
+                        if nuc in self.operator.nuclides_with_data:
+                            # get normalized atoms density in [atoms/b-cm]
+                            val = 1.0e-24 * number_i.get_atom_density(mat, nuc)
+                            if val > self.atom_density_limit:
+                                nuclides.append(nuc)
+                                densities.append(val)
+
+                #set nuclides and densities to the in-memory model
+                openmc.lib.materials[int(mat)].set_densities(nuclides, densities)
 
         # alwyas need to return a model
         return self.model
@@ -1209,45 +1214,49 @@ class MsrBatchwiseMatDilute(MsrBatchwiseMat):
         _model :  openmc.model.Model
             OpenMC parametric model
         """
+        for rank in range(comm.size):
+            number_i = comm.bcast(self.operator.number, root=rank)
 
-        for i, mat in enumerate(self.burn_mats):
-            nuclides = []
-            densities = []
+            for i, mat in enumerate(number_i.materials):
+                nuclides = []
+                densities = []
 
-            if int(mat) in self.mats_id:
-                # Sum all atoms present in [#atoms/b-cm]
-                tot_atoms = 1.0e-24 * sum(self.operator.number.number[i]) / \
-                            self.operator.number.volume[i]
+                if int(mat) in self.mats_id:
+                    # Sum all atoms present in [#atoms/b-cm]
+                    tot_atoms = 1.0e-24 * sum(number_i.number[i]) / number_i.volume[i]
 
-                for nuc in self.operator.number.nuclides:
-                    # Dilute nuclides with cross sections (with data)
-                    if nuc in self.operator.nuclides_with_data:
-                        # [#atoms/b-cm]
-                        val = 1.0e-24 * self.operator.number.get_atom_density(mat,nuc)
-                        # Build parametric function, where param is the dilute fraction
-                        # to replace.
-                        # it assumes all nuclides in material vector have cross sections data
-                        if nuc in self.mat_vector:
-                            val = (1-param) * val + param*self.mat_vector[nuc] * tot_atoms
-                        else:
-                            val *= (1-param)
+                    for nuc in number_i.nuclides:
+                        # Dilute nuclides with cross sections (with data)
+                        if nuc in self.operator.nuclides_with_data:
+                            # [#atoms/b-cm]
+                            val = 1.0e-24 * number_i.get_atom_density(mat,nuc)
+                            # Build parametric function, where param is the
+                            # dilute fraction to replace.
+                            # it assumes all nuclides in material vector have
+                            # cross sections data
+                            if nuc in self.mat_vector:
+                                val = (1-param) * val + param * \
+                                      self.mat_vector[nuc] * tot_atoms
+                            else:
+                                val *= (1-param)
 
-                        #just making sure we are not adding any negative values
-                        if val > self.atom_density_limit:
-                            nuclides.append(nuc)
-                            densities.append(val)
+                            #just making sure we are not adding any negative values
+                            if val > self.atom_density_limit:
+                                nuclides.append(nuc)
+                                densities.append(val)
 
-            # For all other materials, still check density limit
-            else:
-                for nuc in self.operator.number.nuclides:
-                    if nuc in self.operator.nuclides_with_data:
-                        # get atoms density [atoms/b-cm]
-                        val = 1.0e-24 * self.operator.number.get_atom_density(mat, nuc)
-                        if val > self.atom_density_limit:
-                            nuclides.append(nuc)
-                            densities.append(val)
+                # For all other materials, still check density limit
+                else:
+                    for nuc in number_i.nuclides:
+                        if nuc in self.operator.nuclides_with_data:
+                            # get atoms density [atoms/b-cm]
+                            val = 1.0e-24 * number_i.get_atom_density(mat, nuc)
+                            if val > self.atom_density_limit:
+                                nuclides.append(nuc)
+                                densities.append(val)
 
-            openmc.lib.materials[int(mat)].set_densities(nuclides, densities)
+                openmc.lib.materials[int(mat)].set_densities(nuclides, densities)
+
         return self.model
 
     def _update_x_vector_and_volumes(self, x, res):
