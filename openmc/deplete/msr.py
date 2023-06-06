@@ -1109,35 +1109,43 @@ class MsrBatchwiseMatRefuel(MsrBatchwiseMat):
         x : list of numpy.ndarray
             Updated total atoms concentrations
         """
+        # Don't broadcast here
+        number_i = self.operator.number
 
         for mat_id in self.mats_id:
-            mat_idx = self.burn_mats.index(str(mat_id))
-            old_vol = self.operator.number.volume[mat_idx]
-            # update volume, keeping mass density constant
-            self.operator.number.volume[mat_idx] += res / \
-                [m.get_mass_density() for m in self.model.materials if m.id == mat_id][0]
-                #openmc.lib.materials[mat_id].get_density('g/cm3')
+            if str(mat_id) in self.local_mats:
+                mat_idx = self.local_mats.index(str(mat_id))
+                old_vol = number_i.volume[mat_idx]
 
+                # update volume, keeping mass density constant
+                number_i.volume[mat_idx] += res / \
+                    [m.get_mass_density() for m in self.model.materials
+                     if m.id == mat_id][0]
+                    #openmc.lib.materials[mat_id].get_density('g/cm3')
 
-            # update all concentration data with the new updated volumes
-            for nuc, dens in zip(openmc.lib.materials[mat_id].nuclides,
-                                 openmc.lib.materials[mat_id].densities):
+                # update all concentration data with the new updated volumes
+                for nuc, dens in zip(openmc.lib.materials[mat_id].nuclides,
+                                     openmc.lib.materials[mat_id].densities):
 
-                if nuc in self.operator.number.burnable_nuclides:
-                    nuc_idx = self.operator.number.burnable_nuclides.index(nuc)
-                    # convert [#atoms/b-cm] into [#atoms]
-                    x[mat_idx][nuc_idx] = dens / 1.0e-24 * self.operator.number.volume[mat_idx]
-                # when the nuclide is not in depletion chain update the AtomNumber
-                else:
-                    #Atom density needs to be in [#atoms/cm3]
-                    self.operator.number.set_atom_density(mat_idx, nuc, dens / 1.0e-24)
+                    if nuc in number_i.burnable_nuclides:
+                        nuc_idx = number_i.burnable_nuclides.index(nuc)
+                        # convert [#atoms/b-cm] into [#atoms]
+                        x[mat_idx][nuc_idx] = dens / 1.0e-24 * \
+                                            number_i.volume[mat_idx]
+                    # when the nuclide is not in depletion chain update the AtomNumber
+                    else:
+                        #Atom density needs to be in [#atoms/cm3]
+                        number_i.set_atom_density(mat_idx, nuc,
+                                                              dens / 1.0e-24)
 
-            # Normalize nuclides in x vector without cross section data
-            for nuc in self.operator.number.burnable_nuclides:
-                if nuc not in self.operator.nuclides_with_data:
-                    nuc_idx = self.operator.number.burnable_nuclides.index(nuc)
-                    # normalzie with new volume
-                    x[mat_idx][nuc_idx] *= old_vol / self.operator.number.volume[mat_idx]
+                # Normalize nuclides in x vector without cross section data
+                for nuc in number_i.burnable_nuclides:
+                    if nuc not in self.operator.nuclides_with_data:
+                        nuc_idx = number_i.burnable_nuclides.index(nuc)
+                        # normalzie with new volume
+                        x[mat_idx][nuc_idx] *= old_vol / number_i.volume[mat_idx]
+
+        return x
 
 class MsrBatchwiseMatDilute(MsrBatchwiseMat):
     """
@@ -1274,23 +1282,28 @@ class MsrBatchwiseMatDilute(MsrBatchwiseMat):
         x : list of numpy.ndarray
             Updated total atoms concentrations
         """
+        # Don't broadcast here
+        number_i = self.operator.number
+
         for mat_id in self.mats_id:
-            mat_idx = self.burn_mats.index(str(mat_id))
+            if str(mat_id) in self.local_mats:
+                mat_idx = self.local_mats.index(str(mat_id))
 
-            for nuc, dens in zip(openmc.lib.materials[mat_id].nuclides,
-                                 openmc.lib.materials[mat_id].densities):
-                if nuc in self.operator.number.burnable_nuclides:
-                    nuc_idx = self.operator.number.burnable_nuclides.index(nuc)
-                    # convert [#atoms/b-cm] into [#atoms]
-                    x[mat_idx][nuc_idx] = dens / 1.0e-24 * self.operator.number.volume[mat_idx]
-                else:
-                    #Atom density needs to be in [#atoms/cm3]
-                    self.operator.number.set_atom_density(mat_idx, nuc, dens / 1.0e-24)
+                for nuc, dens in zip(openmc.lib.materials[mat_id].nuclides,
+                                     openmc.lib.materials[mat_id].densities):
+                    if nuc in number_i.burnable_nuclides:
+                        nuc_idx = number_i.burnable_nuclides.index(nuc)
+                        # convert [#atoms/b-cm] into [#atoms]
+                        x[mat_idx][nuc_idx] = dens / 1.0e-24 * \
+                                              number_i.volume[mat_idx]
+                    else:
+                        #Atom density needs to be in [#atoms/cm3]
+                        number_i.set_atom_density(mat_idx, nuc, dens / 1.0e-24)
 
-            for nuc in self.operator.number.burnable_nuclides:
-                if nuc not in self.operator.nuclides_with_data:
-                    nuc_idx = self.operator.number.burnable_nuclides.index(nuc)
-                    x[mat_idx][nuc_idx] *= (1-res)
+                for nuc in number_i.burnable_nuclides:
+                    if nuc not in self.operator.nuclides_with_data:
+                        nuc_idx = number_i.burnable_nuclides.index(nuc)
+                        x[mat_idx][nuc_idx] *= (1-res)
 
         return x
 
@@ -1323,9 +1336,9 @@ class MsrBatchwiseWrap1():
         else:
             self.msr_bw_geom = msr_bw_geom
 
-        if not isinstance(msr_bw_mat, MsrBatchwiseMatRefuel):
+        if not isinstance(msr_bw_mat, MsrBatchwiseMat):
             raise ValueError(f'{msr_bw_mat} is not a valid instance of'
-                              ' MsrBatchwiseMatRefuel class')
+                              ' MsrBatchwiseMat class')
         else:
             self.msr_bw_mat = msr_bw_mat
 
@@ -1399,9 +1412,9 @@ class MsrBatchwiseWrap2():
         else:
             self.msr_bw_geom = msr_bw_geom
 
-        if not isinstance(msr_bw_mat, MsrBatchwiseMatDilute):
+        if not isinstance(msr_bw_mat, MsrBatchwiseMat):
             raise ValueError(f'{msr_bw_mat} is not a valid instance of'
-                              ' MsrBatchwiseMatDilute class')
+                              ' MsrBatchwiseMat class')
         else:
             self.msr_bw_mat = msr_bw_mat
 
