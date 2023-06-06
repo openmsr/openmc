@@ -114,13 +114,15 @@ def deplete(func, chain, x, rates, dt, matrix_func=None, msr=None):
 
         if len(msr.index_transfer) > 0:
 
+            # Gather all on comm.rank 0
             matrices = comm.gather(matrices, root=0)
-            x_comb = comm.gather(x, root=0)
+            x = comm.gather(x, root=0)
 
             if comm.rank == 0:
 
+                # Expand lists
                 matrices = [elm for matrice in matrices for elm in matrice]
-                x_comb = [x_elm for x_mat in x_comb for x_elm in x_mat]
+                x = [x_elm for x_mat in x for x_elm in x_mat]
 
                 # calculate transfer rates terms as diagonal matrices
                 transfer = list(map(chain.form_rr_term, repeat(msr),
@@ -149,17 +151,18 @@ def deplete(func, chain, x, rates, dt, matrix_func=None, msr=None):
                 matrix = bmat(rows)
 
                 #concatenate vectors of nuclides in one
-                _x = np.concatenate([xx for xx in x_comb])
+                _x = np.concatenate([xx for xx in x])
                 x_result = func(matrix, _x, dt)
 
                 # Split back the nuclide vector result into the original form
-                x_result = np.split(x_result, np.cumsum([len(i) for i in x_comb])[:-1])
+                x_result = np.split(x_result, np.cumsum([len(i) for i in x])[:-1])
 
             else:
                 x_result = None
 
+            # Braodcast result to other ranks
             x_result = comm.bcast(x_result, root=0)
-
+            # Distribute results across MPI
             x_result = _distribute(x_result)
 
             return x_result
