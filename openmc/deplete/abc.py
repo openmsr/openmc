@@ -25,7 +25,8 @@ from .chain import Chain
 from .results import Results
 from .pool import deplete
 from .transfer_rates import TransferRates
-
+from .batchwise import (BatchwiseGeomTrans, BatchwiseMatDilute,
+            BatchwiseMatRefuel, BatchwiseWrap1, BatchwiseWrap2)
 
 __all__ = [
     "OperatorResult", "TransportOperator",
@@ -658,6 +659,7 @@ class Integrator(ABC):
         self.source_rates = asarray(source_rates)
 
         self.transfer_rates = None
+        self.batchwise = None
 
         if isinstance(solver, str):
             # Delay importing of cram module, which requires this file
@@ -784,6 +786,14 @@ class Integrator(ABC):
         return (self.operator.prev_res[-1].time[-1],
                 len(self.operator.prev_res) - 1)
 
+    def _critical_update(self, step_index, bos_conc):
+        """Get BOS from MSR criticality batch-wise control
+        """
+        x = deepcopy(bos_conc)
+        # Get new vector after keff criticality control
+        x = self.batchwise.msr_search_for_keff(x, step_index)
+        return x
+
     def integrate(self, final_step=True, output=True):
         """Perform the entire depletion process across all steps
 
@@ -809,10 +819,23 @@ class Integrator(ABC):
 
                 # Solve transport equation (or obtain result from restart)
                 if i > 0 or self.operator.prev_res is None:
+                     # Update geometry/material according to msr batchwise definition
+                    if self.batchwise and source_rate != 0.0:
+                        conc = self._critical_update(i, conc)
+
                     conc, res = self._get_bos_data_from_operator(i, source_rate, conc)
                 else:
                     conc, res = self._get_bos_data_from_restart(i, source_rate, conc)
+                    # Update volume after depletion step
+                    if self.batchwise:
+                        self.batchwise._update_volumes_after_depletion(conc)
 
+                        #If there was a crash, recalculate conc
+                        if self.interrupt:
+                            conc = self._critical_update(i, conc)
+                            conc, res = self._get_bos_data_from_operator(i, source_rate, conc)
+
+                print('Timestep: {} --> keff: {:.5f}'.format(i, res.k.n))
                 # Solve Bateman equations over time interval
                 proc_time, conc_list, res_list = self(conc, res.rates, dt, source_rate, i)
 
@@ -834,6 +857,8 @@ class Integrator(ABC):
             # solve)
             if output and final_step and comm.rank == 0:
                 print(f"[openmc.deplete] t={t} (final operator evaluation)")
+            if self.batchwise and source_rate != 0.0:
+                conc = self._critical_update(i+1, conc)
             res_list = [self.operator(conc, source_rate if final_step else 0.0)]
             StepResult.save(self.operator, [conc], res_list, [t, t],
                          source_rate, self._i_res + len(self), proc_time)
@@ -866,6 +891,48 @@ class Integrator(ABC):
 
         self.transfer_rates.set_transfer_rate(material, elements, transfer_rate,
                                       transfer_rate_units, destination_material)
+
+    def add_batchwise(self, type, **kwargs):
+        if self.batchwise is None:
+            if type == 'trans':
+                self.batchwise = BatchwiseGeomTrans(self.operator,
+                                                self.operator.model, **kwargs)
+            elif type == 'refuel':
+                self.batchwise = BatchwiseMatRefuel(self.operator,
+                                                self.operator.model, **kwargs)
+            elif type == 'dilute':
+                self.batchwise = BatchwiseGeomDilute(self.operator,
+                                                self.operator.model, **kwargs)
+        else:
+            self.batchwise = [self.batchwise]
+            if type == 'trans':
+                self.batchwise.append(BatchwiseGeomTrans(self.operator,
+                                                self.operator.model, **kwargs))
+            elif type == 'refuel':
+                self.batchwise.append(BatchwiseMatRefuel(self.operator,
+                                                self.operator.model, **kwargs))
+            elif type == 'dilute':
+                self.batchwise.append(BatchwiseMatDilute(self.operator,
+                                                self.operator.model, **kwargs))
+
+    def add_batchwise_wrap(self, type, **kwargs):
+        breakpoint()
+        if self.batchwise.__class__ is not list:
+            self.batchwise = [self.batchwise]
+
+        args = dict()
+        for arg, class_name in enumerate(['BatchwiseGeom', 'BatchwiseMat']):
+            obj = [i for i in self.batchwise \
+                   if i.__class__.__base__.__name__ == class_name]
+            if obj:
+                args[arg] = self.batchwise.index(obj[0])
+            else:
+                args[arg] = None
+
+        if type == '1':
+            self.batchwise = BatchwiseWrap1(**args)
+        elif type == '2':
+            self.batchwise = BatchwiseWrap2(**args, **kwargs)
 
 @add_params
 class SIIntegrator(Integrator):
