@@ -6,6 +6,7 @@ import scipy.optimize as sopt
 import openmc
 import openmc.model
 import openmc.checkvalue as cv
+import openmc.lib
 
 
 _SCALAR_BRACKETED_METHODS = ['brentq', 'brenth', 'ridder', 'bisect']
@@ -50,8 +51,9 @@ def _search_keff(guess, target, model_builder, model_args, print_iterations,
     # Build the model
     model = model_builder(guess, **model_args)
 
-    # Run the model and obtain keff
-    sp_filepath = model.run(**run_args)
+    # Run the model in memory and obtain keff
+    openmc.lib.run(**run_args)
+    sp_filepath = f'statepoint.{model.settings.batches}.h5'
     with openmc.StatePoint(sp_filepath) as sp:
         keff = sp.keff
 
@@ -199,6 +201,16 @@ def search_for_keff(model_builder, initial_guess=None, target=1.0,
     args.update(kwargs)
 
     # Perform the search
-    zero_value = root_finder(**args)
+    try:
+        zero_value, root_res = root_finder(**args, full_output=True, disp=False)
 
-    return zero_value, guesses, results
+        if root_res.converged:
+            return zero_value, guesses, results
+
+        else:
+            print(f'root_finder did not converge beacuse of: {root_res.flag}')
+            return guesses, results
+
+    except Exception as e:
+        print(e)
+        return guesses, results
