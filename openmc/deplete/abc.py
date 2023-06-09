@@ -831,7 +831,7 @@ class Integrator(ABC):
                         self.batchwise._update_volumes_after_depletion(conc)
 
                         #If there was a crash, recalculate conc
-                        if self.interrupt:
+                        if self.batchwise.interrupt:
                             conc = self._critical_update(i, conc)
                             conc, res = self._get_bos_data_from_operator(i, source_rate, conc)
 
@@ -916,7 +916,6 @@ class Integrator(ABC):
                                                 self.operator.model, **kwargs))
 
     def add_batchwise_wrap(self, type, **kwargs):
-        breakpoint()
         if self.batchwise.__class__ is not list:
             self.batchwise = [self.batchwise]
 
@@ -925,14 +924,14 @@ class Integrator(ABC):
             obj = [i for i in self.batchwise \
                    if i.__class__.__base__.__name__ == class_name]
             if obj:
-                args[arg] = self.batchwise.index(obj[0])
+                args[arg] = obj[0]
             else:
                 args[arg] = None
 
         if type == '1':
-            self.batchwise = BatchwiseWrap1(**args)
+            self.batchwise = BatchwiseWrap1(*args.values())
         elif type == '2':
-            self.batchwise = BatchwiseWrap2(**args, **kwargs)
+            self.batchwise = BatchwiseWrap2(*args.values(), **kwargs)
 
 @add_params
 class SIIntegrator(Integrator):
