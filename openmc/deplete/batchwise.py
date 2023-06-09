@@ -61,6 +61,10 @@ class Batchwise(ABC):
         If set only nuclides with atom density greater than limit are passed
         to next transport.
         Default to 0.0 atoms/b-cm
+    interrupt : bool
+        To be used during a restart from a batchwise simulation that was
+        interrupted.
+        Default to False
     Attributes
     ----------
     burn_mats : list of str
@@ -69,7 +73,7 @@ class Batchwise(ABC):
     def __init__(self, operator, model, bracket, bracket_limit,
                  bracketed_method='brentq', tol=0.01, target=1.0,
                  print_iterations=True, search_for_keff_output=False,
-                 atom_density_limit=0.0):
+                 atom_density_limit=0.0, interrupt=False):
 
         self.operator = operator
         self.burn_mats = operator.burnable_mats
@@ -94,6 +98,7 @@ class Batchwise(ABC):
         self.print_iterations = print_iterations
         self.search_for_keff_output = search_for_keff_output
         self.atom_density_limit = atom_density_limit
+        self.interrupt = interrupt
 
     @property
     def bracketed_method(self):
@@ -370,11 +375,11 @@ class BatchwiseGeom(Batchwise):
     def __init__(self, operator, model, cell_id_or_name, bracket,
                  bracket_limit, bracketed_method='brentq', tol=0.01, target=1.0,
                  print_iterations=True, search_for_keff_output=False,
-                 atom_density_limit=0.0):
+                 atom_density_limit=0.0, interrupt=False):
 
         super().__init__(operator, model, bracket, bracket_limit,
                          bracketed_method, tol, target, print_iterations,
-                         search_for_keff_output, atom_density_limit)
+                         search_for_keff_output, atom_density_limit, interrupt)
 
         self.cell_id = self._get_cell_id(cell_id_or_name)
 
@@ -576,11 +581,11 @@ class BatchwiseGeomTrans(BatchwiseGeom):
     def __init__(self, operator, model, cell_id_or_name, axis, bracket,
                  bracket_limit, bracketed_method='brentq', tol=0.01, target=1.0,
                  print_iterations=True, search_for_keff_output=False,
-                 atom_density_limit=0.0):
+                 atom_density_limit=0.0, interrupt=False):
 
         super().__init__(operator, model, cell_id_or_name, bracket, bracket_limit,
                          bracketed_method, tol, target, print_iterations,
-                         search_for_keff_output, atom_density_limit)
+                         search_for_keff_output, atom_density_limit, interrupt)
 
         #index of cell translation direction axis
         check_value('axis', axis, [0,1,2])
@@ -670,11 +675,11 @@ class BatchwiseMat(Batchwise):
     def __init__(self, operator, model, mats_id_or_name, mat_vector, bracket,
                  bracket_limit, bracketed_method='brentq', tol=0.01, target=1.0,
                  print_iterations=True, search_for_keff_output=False,
-                 atom_density_limit=0.0, restart_level=0.0):
+                 atom_density_limit=0.0, restart_level=0.0, interrupt=False):
 
         super().__init__(operator, model, bracket, bracket_limit,
                          bracketed_method, tol, target, print_iterations,
-                         search_for_keff_output, atom_density_limit)
+                         search_for_keff_output, atom_density_limit, interrupt)
 
         self.mats_id = [self._get_mat_id(i) for i in mats_id_or_name]
 
@@ -856,11 +861,12 @@ class BatchwiseMatRefuel(BatchwiseMat):
     def __init__(self, operator, model, mats_id_or_name, mat_vector, bracket,
                  bracket_limit, bracketed_method='brentq', tol=0.01, target=1.0,
                  print_iterations=True, search_for_keff_output=False,
-                 atom_density_limit=0.0, restart_level=0.0):
+                 atom_density_limit=0.0, restart_level=0.0, interrupt=False):
 
         super().__init__(operator, model, mats_id_or_name, mat_vector, bracket, bracket_limit,
                          bracketed_method, tol, target, print_iterations,
-                         search_for_keff_output, atom_density_limit, restart_level)
+                         search_for_keff_output, atom_density_limit,
+                         restart_level, interrupt)
 
     def _model_builder(self, param):
         """
@@ -1042,11 +1048,12 @@ class BatchwiseMatDilute(BatchwiseMat):
     def __init__(self, operator, model, mats_id_or_name, mat_vector, bracket,
                  bracket_limit, bracketed_method='brentq', tol=0.01, target=1.0,
                  print_iterations=True, search_for_keff_output=False,
-                 atom_density_limit=0.0, restart_level=0.0):
+                 atom_density_limit=0.0, restart_level=0.0, interrupt=False):
 
         super().__init__(operator, model, mats_id_or_name, mat_vector, bracket,
                          bracket_limit, bracketed_method, tol, target, print_iterations,
-                         search_for_keff_output, atom_density_limit, restart_level)
+                         search_for_keff_output, atom_density_limit,
+                         restart_level, interrupt)
 
     def _model_builder(self, param):
         """
@@ -1164,25 +1171,30 @@ class BatchwiseWrap1():
 
     Parameters
     ----------
-    msr_bw_geom : MsrBatchwiseGeom
+    bw_geom : BatchwiseGeom
         openmc.deplete.msr.MsrBatchwiseGeom object
-    msr_bw_mat : MsrBatchwiseMat
+    bw_mat : BatchwiseMat
         openmc.deplete.msr.MsrBatchwiseMat object
     """
 
-    def __init__(self, msr_bw_geom, msr_bw_mat=None):
+    def __init__(self, bw_geom, bw_mat=None, interrupt=False):
 
-        if not isinstance(msr_bw_geom, MsrBatchwiseGeom):
-            raise ValueError(f'{msr_bw_geom} is not a valid instance of'
-                              ' MsrBatchwiseGeom class')
+        if not isinstance(bw_geom, BatchwiseGeom):
+            raise ValueError(f'{bw_geom} is not a valid instance of'
+                              ' BatchwiseGeom class')
         else:
-            self.msr_bw_geom = msr_bw_geom
+            self.bw_geom = bw_geom
 
-        if not isinstance(msr_bw_mat, MsrBatchwiseMat):
-            raise ValueError(f'{msr_bw_mat} is not a valid instance of'
-                              ' MsrBatchwiseMat class')
+        if not isinstance(bw_mat, BatchwiseMat):
+            raise ValueError(f'{bw_mat} is not a valid instance of'
+                              ' BatchwiseMat class')
         else:
-            self.msr_bw_mat = msr_bw_mat
+            self.bw_mat = bw_mat
+
+        self.interrupt = interrupt
+
+    def _update_volumes_after_depletion(self, x):
+            self.bw_geom._update_volumes_after_depletion(x)
 
     def msr_search_for_keff(self, x, step_index):
         """
@@ -1199,17 +1211,17 @@ class BatchwiseWrap1():
             Updated total atoms concentrations
         """
         #Start by doing a geometrical parametrization
-        x = self.msr_bw_geom.msr_search_for_keff(x, step_index)
+        x = self.bw_geom.msr_search_for_keff(x, step_index)
         #check if upper geometrical limit gets hit
-        if self.msr_bw_geom._get_cell_attrib() >= self.msr_bw_geom.bracket_limit[1]:
+        if self.bw_geom._get_cell_attrib() >= self.bw_geom.bracket_limit[1]:
             # Restart level and add material
-            if self.msr_bw_mat is not None:
-                self.msr_bw_geom._set_cell_attrib(self.msr_bw_mat.restart_level)
+            if self.bw_mat is not None:
+                self.bw_geom._set_cell_attrib(self.bw_mat.restart_level)
                 x = self.msr_bw_mat.msr_search_for_keff(x, step_index)
             # in case not material parametrization is defined, touch and exit-
             else:
                 from pathlib import Path
-                print(f'Reached maximum of {self.msr_bw_geom.bracket_limit[1]} cm'
+                print(f'Reached maximum of {self.bw_geom.bracket_limit[1]} cm'
                        ' exit..')
                 Path('sim.done').touch()
                 exit()
@@ -1235,9 +1247,9 @@ class BatchwiseWrap2():
 
     Parameters
     ----------
-    msr_bw_geom : MsrBatchwiseGeom
+    bw_geom : BatchwiseGeom
         openmc.deplete.msr.MsrBatchwiseGeom object
-    msr_bw_mat : MsrBatchwiseMat
+    bw_mat : MsrBatchwiseMat
         openmc.deplete.msr.MsrBatchwiseMat object
     dilute_interval : int
         Frequency of dilution in number of timesteps
@@ -1246,19 +1258,20 @@ class BatchwiseWrap2():
         Default to None
     """
 
-    def __init__(self, msr_bw_geom, msr_bw_mat, dilute_interval, first_dilute=None):
+    def __init__(self, bw_geom, bw_mat, dilute_interval, first_dilute=None,
+                 interrupt=False):
 
-        if not isinstance(msr_bw_geom, MsrBatchwiseGeom):
-            raise ValueError(f'{msr_bw_geom} is not a valid instance of'
-                              ' MsrBatchwiseGeom class')
+        if not isinstance(bw_geom, BatchwiseGeom):
+            raise ValueError(f'{bw_geom} is not a valid instance of'
+                              ' BatchwiseGeom class')
         else:
-            self.msr_bw_geom = msr_bw_geom
+            self.bw_geom = bw_geom
 
-        if not isinstance(msr_bw_mat, MsrBatchwiseMat):
-            raise ValueError(f'{msr_bw_mat} is not a valid instance of'
-                              ' MsrBatchwiseMat class')
+        if not isinstance(bw_mat, BatchwiseMat):
+            raise ValueError(f'{bw_mat} is not a valid instance of'
+                              ' BatchwiseMat class')
         else:
-            self.msr_bw_mat = msr_bw_mat
+            self.bw_mat = bw_mat
 
         #TODO check these values
         self.first_dilute = first_dilute
@@ -1269,6 +1282,10 @@ class BatchwiseWrap2():
             self.dilute_interval = dilute_interval + self.first_dilute
         else:
             self.dilute_interval = dilute_interval
+        self.interrupt = interrupt
+
+    def _update_volumes_after_depletion(self, x):
+            self.bw_geom._update_volumes_after_depletion(x)
 
     def msr_search_for_keff(self, x, step_index):
         """
@@ -1287,16 +1304,17 @@ class BatchwiseWrap2():
         #Check if index lies in dilution timesteps
         if step_index in [self.first_dilute, self.dilute_interval]:
             # restart level and perform dilution
-            self.msr_bw_geom._set_cell_attrib(self.msr_bw_mat.restart_level)
-            x = self.msr_bw_mat.msr_search_for_keff(x, step_index)
+            self.bw_geom._set_cell_attrib(self.bw_mat.restart_level)
+            x = self.bw_mat.msr_search_for_keff(x, step_index)
             #update dulution interval
             if step_index == self.dilute_interval:
                 self.dilute_interval += self.step_interval
 
         else:
-            x = self.msr_bw_geom.msr_search_for_keff(x, step_index)
+            x = self.bw_geom.msr_search_for_keff(x, step_index)
             # in this case if upper limit gets hit, stop directly
-            if self.msr_bw_geom._get_cell_attrib() >= self.msr_bw_geom.bracket_limit[1]:
+            if self.bw_geom._get_cell_attrib() >= self.bw_geom.bracket_limit[1]:
                 from pathlib import Path
-                print(f'Reached maximum of {self.msr_bw_geom.bracket_limit[1]} cm'
+                print(f'Reached maximum of {self.bw_geom.bracket_limit[1]} cm'
                        ' exit..')
+        return x
