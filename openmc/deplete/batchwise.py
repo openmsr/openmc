@@ -1217,7 +1217,7 @@ class BatchwiseWrap1():
             # Restart level and add material
             if self.bw_mat is not None:
                 self.bw_geom._set_cell_attrib(self.bw_mat.restart_level)
-                x = self.msr_bw_mat.msr_search_for_keff(x, step_index)
+                x = self.bw_mat.msr_search_for_keff(x, step_index)
             # in case not material parametrization is defined, touch and exit-
             else:
                 from pathlib import Path
