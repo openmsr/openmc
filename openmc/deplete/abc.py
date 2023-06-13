@@ -893,6 +893,19 @@ class Integrator(ABC):
                                       transfer_rate_units, destination_material)
 
     def add_batchwise(self, type, **kwargs):
+        """Add batchwise operation to integrator scheme.
+
+        Parameters
+        ----------
+        type : str
+            Type of batchwise operation to add. `Trans` stands for geometrical
+            translation, `refuel` for material refueling and `dilute` for material
+            dilute.
+        **kwargs
+            keyword arguments that are passed to the batchwise class.
+
+        """
+
         if self.batchwise is None:
             if type == 'trans':
                 self.batchwise = BatchwiseGeomTrans(self.operator,
@@ -916,6 +929,17 @@ class Integrator(ABC):
                                                 self.operator.model, **kwargs))
 
     def add_batchwise_wrap(self, type, **kwargs):
+        """Add batchwise wrapper to integrator scheme, after calls to
+        meth:`add_batchwise`.
+
+        Parameters
+        ----------
+        type : str
+            Type of wrapper function. So far only '1' or '2'.
+        **kwargs
+            keyword arguments that are passed to the batchwise wrapper class.
+            
+        """
         if self.batchwise.__class__ is not list:
             self.batchwise = [self.batchwise]
 
