@@ -1235,10 +1235,10 @@ class BatchwiseWrap1():
                 print(f'Reached maximum of {self.bw_geom.bracket_limit[1]} cm'
                        ' exit..')
                 Path('sim.done').touch()
-                
+
                 for rank in range(comm.size):
                     comm.Abort()
-    
+
         return x
 
 class BatchwiseWrap2():
@@ -1341,4 +1341,8 @@ class BatchwiseWrap2():
                 from pathlib import Path
                 print(f'Reached maximum of {self.bw_geom.bracket_limit[1]} cm'
                        ' exit..')
+                Path('sim.done').touch()
+
+                for rank in range(comm.size):
+                    comm.Abort()
         return x
