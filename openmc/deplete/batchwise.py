@@ -21,9 +21,8 @@ from openmc.mpi import comm
 class Batchwise(ABC):
     """Abstract Base Class for implementing depletion batchwise classes.
 
-    Users should instantiate:
-    :class:`openmc.deplete.batchwise.BatchwiseGeom` or
-    :class:`openmc.deplete.batchwise.BatchwiseMat` rather than this class.
+    An instance of this class can be passed directly to an instance of one of
+    the :class:`openmc.deplete.Integrator` classes.
 
     Parameters
     ----------
