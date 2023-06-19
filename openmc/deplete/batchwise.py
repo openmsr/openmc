@@ -19,11 +19,10 @@ from openmc.mpi import comm
 
 
 class Batchwise(ABC):
-    """Abstract Base Class for implementing msr batchwise classes.
+    """Abstract Base Class for implementing depletion batchwise classes.
 
-    Users should instantiate:
-    :class:`openmc.deplete.msr.MsrBatchwiseGeom` or
-    :class:`openmc.deplete.msr.MsrBatchwiseMat` rather than this class.
+    An instance of this class can be passed directly to an instance of one of
+    the :class:`openmc.deplete.Integrator` classes.
 
     Parameters
     ----------
@@ -148,11 +147,11 @@ class Batchwise(ABC):
         Callable function which builds a model according to a passed
         parameter. This function must return an openmc.model.Model object.
         Parameters
-        ------------
+        ----------
         param : parameter
             model function variable
         Returns
-        ------------
+        -------
         _model :  openmc.model.Model
             OpenMC parametric model
         """
@@ -161,11 +160,11 @@ class Batchwise(ABC):
         Perform the criticality search for a given parametric model.
         It supports geometrical or material based `search_for_keff`.
         Parameters
-        ------------
+        ----------
         val : float
             Previous result value
         Returns
-        ------------
+        -------
         res : float
             Estimated value of the variable parameter where keff is the
             targeted value
@@ -255,7 +254,7 @@ class Batchwise(ABC):
         """
         Save results to msr_results.h5 file.
         Parameters
-        ------------
+        ----------
         type : str
             String to characterize geometry and material results
         step_index : int
@@ -278,16 +277,16 @@ class Batchwise(ABC):
         """
         After a depletion step, both material volume and density change, due to
         transmutation reactions and continuous removal operations, if present.
-        At present we don't have any implementation to calculate density and volume
-        changes due to different molecules speciation.
-        Therefore, the assumption we make is to consider the density constant and
-        let the material volume vary.
+        At present we lack any implementation to calculate density and volume
+        changes due to different molecules speciation. Therefore, the assumption
+        we make is to consider the density constant and let the material volume
+        vary with the change in the nuclide concentrations.
         This method uses the nuclide concentrations coming from the previous Bateman
         solution and calculates a new volume, keeping the mass density of the material
         constant. It will then assign the volume to the AtomNumber class instance.
 
         Parameters
-        ------------
+        ----------
         x : list of numpy.ndarray
             Total atom concentrations
         """
@@ -314,12 +313,13 @@ class Batchwise(ABC):
                 number_i.volume[i] = dens / AVOGADRO / rho
 
 class BatchwiseGeom(Batchwise):
-    """ MsrBatchwise geoemtrical class
+    """ Batchwise geoemtrical parent class
 
     Instances of this class can be used to define geometrical based criticality
     actions during a transport-depletion calculation.
-    Currently only translation is supported.
-    In this case a geoemtrical cell translation coefficient will be used as
+    Currently only translation is supported as a child class, but rotation
+    can be easily added if needed.
+    In this case a geometrical cell translation coefficient will be used as
     parametric variable.
     The user should remember to fill the cell with a Universe.
 
@@ -366,6 +366,9 @@ class BatchwiseGeom(Batchwise):
         If set only nuclides with atom density greater than limit are passed
         to next transport.
         Default to 0.0 atoms/b-cm
+    interrupt : bool, optional
+        whether or not ro restart from an interrupted simulation (crashed).
+        Default to False
 
     Attributes
     ----------
@@ -385,12 +388,12 @@ class BatchwiseGeom(Batchwise):
 
 
     def _get_cell_id(self, val):
-        """Helper method for getting cell id from Cell obj or name.
+        """Helper method for getting cell id from cell instance or cell name.
         Parameters
         ----------
         val : Openmc.Cell or str or int representing Cell
         Returns
-        ----------
+        -------
         id : str
             Cell id
         """
@@ -425,17 +428,17 @@ class BatchwiseGeom(Batchwise):
         """
         Get cell attribute coefficient.
         Returns
-        ------------
+        -------
         coeff : float
             cell coefficient
         """
 
     def _set_cell_attrib(self, val, attrib_name):
         """
-        Set translation coeff to the cell in memeory.
-        The translation is only applied to cells filled with a universe
+        Set cell attribute to the cell instance.
+        Attributes are only applied to cells filled with a universe
         Parameters
-        ------------
+        ----------
         var : float
             Surface coefficient to set
         geometry : openmc.model.geometry
@@ -446,12 +449,12 @@ class BatchwiseGeom(Batchwise):
 
     def _update_materials(self, x):
         """
-        Take concentration vectors from Bateman solution at previous
-        timestep and normalize them with the new updated material volume,
-        before assign them to the in-memory model.
+        Assign concentration vectors from Bateman solution at previous
+        timestep to the in-memory model materials, after having recalculated the
+        material volume.
 
         Parameters
-        ------------
+        ----------
         x : list of numpy.ndarray
             Total atom concentrations
         """
@@ -478,13 +481,13 @@ class BatchwiseGeom(Batchwise):
     def _model_builder(self, param):
         """
         Builds the parametric model that is passed to the `msr_search_for_keff`
-        function by setting the parametric variable to the geoemetry cell.
+        function by setting the parametric variable to the geoemetrical cell.
         Parameters
-        ------------
+        ----------
         param : model parametricl variable
-            cell translation coefficient
+            for examlple: cell translation coefficient
         Returns
-        ------------
+        -------
         _model :  openmc.model.Model
             OpenMC parametric model
         """
@@ -501,7 +504,7 @@ class BatchwiseGeom(Batchwise):
         x : list of numpy.ndarray
             Total atoms concentrations
         Returns
-        ------------
+        -------
         x : list of numpy.ndarray
             Updated total atoms concentrations
         """
@@ -526,13 +529,8 @@ class BatchwiseGeom(Batchwise):
         return x
 
 class BatchwiseGeomTrans(BatchwiseGeom):
-    """ MsrBatchwise geometric translation class
-
-    Instances of this class can be used to define geometrical based criticality
-    actions during a transport-depletion calculation.
-    In this case a geoemtrical cell translation coefficient will be used as
-    parametric variable.
-    The user should remember to fill the cell with a Universe.
+    """ Batchwise geometric translation child class, inherited from parent class
+    BatchwiseGeom.
 
     An instance of this class can be passed directly to an instance of the
     integrator class, such as :class:`openmc.deplete.CECMIntegrator`.
@@ -599,7 +597,7 @@ class BatchwiseGeomTrans(BatchwiseGeom):
         Get cell translation coefficient.
         The translation is only applied to cells filled with a universe
         Returns
-        ------------
+        -------
         coeff : float
             cell coefficient
         """
@@ -612,7 +610,7 @@ class BatchwiseGeomTrans(BatchwiseGeom):
         Set translation coeff to the cell in memeory.
         The translation is only applied to cells filled with a universe
         Parameters
-        ------------
+        ----------
         var : float
             Surface coefficient to set
         geometry : openmc.model.geometry
@@ -627,7 +625,7 @@ class BatchwiseGeomTrans(BatchwiseGeom):
                 setattr(cell, attrib_name, self.vector)
 
 class BatchwiseMat(Batchwise):
-    """ MsrBatchwise material class
+    """ Batchwise material class parent class.
 
     Instances of this class can be used to define material based criticality
     actions during a transport-depletion calculation.
@@ -663,6 +661,7 @@ class BatchwiseMat(Batchwise):
     target : Real, optional
         This is equivalent to the `target` parameter of the `search_for_keff`.
         Default to 1.0
+
     Attributes
     ----------
     mats_id_or_name : List of openmc.Material or int or str
@@ -699,24 +698,25 @@ class BatchwiseMat(Batchwise):
             self.restart_level = restart_level
 
     def _check_nuclides(self, nucs):
-        """Checks if refueling nuclides exist in the parametric material.
+        """Checks if nuclides vector exist in the parametric material.
         Parameters
         ----------
         nucs : list of str
-            Refueling nuclides
+            nuclides vector
         """
         for nuc in nucs:
-            check_value("check nuclide to refuel exists in mat", nuc,
+            check_value("check nuclids exists in mat", nuc,
                 [mat.nuclides for mat_id, mat in openmc.lib.materials.items() \
                 if mat_id in self.mats_id][0])
 
     def _get_mat_id(self, val):
-        """Helper method for getting material id from Material obj or name.
+        """Helper method for getting material id from Material instance or
+        material name.
         Parameters
         ----------
         val : Openmc,Material or str or int representing material name/id
         Returns
-        ----------
+        -------
         id : str
             Material id
         """
@@ -743,16 +743,16 @@ class BatchwiseMat(Batchwise):
         """
         Builds the parametric model that is passed to the `msr_search_for_keff`
         function by updating the material densities and setting the parametric
-        variable to the material nuclides to add. Since this is a paramteric
+        variable as function of the nuclides vector. Since this is a paramteric
         material addition (or removal), we can parametrize the volume as well.
         Parameters
-        ------------
+        ----------
         param :
-            Model function variable, quantity of material to refuel in grams
+            Model material function variable
         Returns
-        ------------
+        -------
         _model :  openmc.model.Model
-            OpenMC parametric model
+            Openmc parametric model
         """
 
     def _update_x_vector_and_volumes(self, x, res):
@@ -764,13 +764,13 @@ class BatchwiseMat(Batchwise):
         class to renormalize the atoms vector in the model in memory before
         running the next transport solver.
         Parameters
-        ------------
+        ----------
         x : list of numpy.ndarray
             Total atoms concentrations
         res : float
             Root of the search_for_keff function
         Returns
-        ------------
+        -------
         x : list of numpy.ndarray
             Updated total atoms concentrations
         """
@@ -781,11 +781,11 @@ class BatchwiseMat(Batchwise):
         Will set the root of the `search_for_keff` function to the atoms
         concentrations vector.
         Parameters
-        ------------
+        ----------
         x : list of numpy.ndarray
             Total atoms concentrations
         Returns
-        ------------
+        -------
         x : list of numpy.ndarray
             Updated total atoms concentrations
         """
@@ -810,12 +810,11 @@ class BatchwiseMat(Batchwise):
 
 class BatchwiseMatRefuel(BatchwiseMat):
     """
-    MsrBatchwiseMat inherited material class
+    Batchwise material refuel child class, inherited from BatchwiseMat parent
+    class.
 
     Instances of this class can be used to define material based criticality
     actions during a transport-depletion calculation.
-    CA specific class, refuel if bracket upper limit gets hit by the
-    geometical search.
 
     An instance of this class can be passed directly to an instance of the
     integrator class, such as :class:`openmc.deplete.CECMIntegrator`.
@@ -876,11 +875,11 @@ class BatchwiseMatRefuel(BatchwiseMat):
         of atoms per material and try to conserve this quantity. Both the
         material volume and density are let free to vary.
         Parameters
-        ------------
+        ----------
         param :
             Model function variable, fraction of total atoms to dilute
         Returns
-        ------------
+        -------
         _model :  openmc.model.Model
             OpenMC parametric model
         """
@@ -947,13 +946,13 @@ class BatchwiseMatRefuel(BatchwiseMat):
         class to renormalize the atoms vector in the model in memory before
         running the next transport solver.
         Parameters
-        ------------
+        ----------
         x : list of numpy.ndarray
             Total atoms concentrations
         res : float
             Root of the search_for_keff function
         Returns
-        ------------
+        -------
         x : list of numpy.ndarray
             Updated total atoms concentrations
         """
@@ -997,12 +996,11 @@ class BatchwiseMatRefuel(BatchwiseMat):
 
 class BatchwiseMatDilute(BatchwiseMat):
     """
-    MsrBatchwiseMat dilute inherited material class
+    Batchwise material dilution child class, inherited from BatchwiseMat parent
+    class.
 
     Instances of this class can be used to define material based criticality
     actions during a transport-depletion calculation.
-    CA specific class, refuel if bracket upper limit gets hit by the
-    geometical search.
 
     An instance of this class can be passed directly to an instance of the
     integrator class, such as :class:`openmc.deplete.CECMIntegrator`.
@@ -1063,11 +1061,11 @@ class BatchwiseMatDilute(BatchwiseMat):
         of atoms per material and try to conserve this quantity. Both the
         material volume and density are let free to vary.
         Parameters
-        ------------
+        ----------
         param :
             Model function variable, fraction of total atoms to dilute
         Returns
-        ------------
+        -------
         _model :  openmc.model.Model
             OpenMC parametric model
         """
@@ -1121,13 +1119,13 @@ class BatchwiseMatDilute(BatchwiseMat):
         Updates and returns the total atoms concentrations vector with the root
         from the `search_for_keff`. No volume update is computed here.
         Parameters
-        ------------
+        ----------
         x : list of numpy.ndarray
             Total atoms concentrations
         res : float
             Root of the search_for_keff function
         Returns
-        ------------
+        -------
         x : list of numpy.ndarray
             Updated total atoms concentrations
         """
@@ -1158,13 +1156,19 @@ class BatchwiseMatDilute(BatchwiseMat):
 
 class BatchwiseWrap1():
     """
-    MsrBatchwise wrapper class, it wraps a MsrBatchwiseGeom instance to a
-    MsrBatchwiseMatRefuel one.
+    Batchwise wrapper class, it wraps BatchwiseGeom and BatchwiseMat instances,
+    with some user defined logic.
 
-    The logic is the following: runs a
-    :meth:`openmc.msr.MsrBatchwiseMatRefuel.msr_search_for_keff` every time
-    :meth:`openmc.msr.MsrBatchwiseGeom.msr_search_for_keff` return a value
-    greater than the the bracket upper geometrical limit.
+    This class should probably not be defined here, but we can keep it now for
+    convenience
+
+    The loop logic of this wrapper class is the following:
+
+    1. Run BatchwiseGeom and return geometrical coefficient
+    2. check if geometrical coeff hits bracket upper geometrical limit
+    3.1 if not, update geometry
+    3.2 if yes, set geometrical coefficient to user-defined restart level and
+    run BatchwiseMat
 
     An instance of this class can be passed directly to an instance of the
     integrator class, such as :class:`openmc.deplete.CECMIntegrator`.
@@ -1172,9 +1176,9 @@ class BatchwiseWrap1():
     Parameters
     ----------
     bw_geom : BatchwiseGeom
-        openmc.deplete.msr.MsrBatchwiseGeom object
+        openmc.deplete.batchwise.BatchwiseGeom object
     bw_mat : BatchwiseMat
-        openmc.deplete.msr.MsrBatchwiseMat object
+        openmc.deplete.batchwise.BatchwiseMat object
     """
 
     def __init__(self, bw_geom, bw_mat=None, interrupt=False):
@@ -1194,7 +1198,13 @@ class BatchwiseWrap1():
         self.interrupt = interrupt
 
     def _update_volumes_after_depletion(self, x):
-            self.bw_geom._update_volumes_after_depletion(x)
+        """
+        Parameters
+        ----------
+        x : list of numpy.ndarray
+            Total atom concentrations
+        """
+        self.bw_geom._update_volumes_after_depletion(x)
 
     def msr_search_for_keff(self, x, step_index):
         """
@@ -1202,11 +1212,11 @@ class BatchwiseWrap1():
         Will set the root of the `search_for_keff` function to the atoms
         concentrations vector.
         Parameters
-        ------------
+        ----------
         x : list of numpy.ndarray
             Total atoms concentrations
         Returns
-        ------------
+        -------
         x : list of numpy.ndarray
             Updated total atoms concentrations
         """
@@ -1224,23 +1234,30 @@ class BatchwiseWrap1():
                 print(f'Reached maximum of {self.bw_geom.bracket_limit[1]} cm'
                        ' exit..')
                 Path('sim.done').touch()
-                exit()
+
+                for rank in range(comm.size):
+                    comm.Abort()
+
         return x
 
 class BatchwiseWrap2():
     """
-    MsrBatchwise wrapper class, it wraps a MsrBatchwiseGeom instance to a
-    MsrBatchwiseMatDilute one.
+    Batchwise wrapper class, it wraps BatchwiseGeom and BatchwiseMat instances,
+    with some user defined logic.
 
-    The logic is the following: runs a
-    :meth:`openmc.msr.MsrBatchwiseMatDilute.msr_search_for_keff` every time
-    the step index equals the dilute interval, otherwise runs a
-    :meth:`openmc.msr.MsrBatchwiseGeom.msr_search_for_keff`
-    If a value greater than the the bracket upper geometrical limit is returned,
-    simply stop the sim.
+    This class should probably not be defined here, but we can keep it now for
+    convenience
 
-    Instances of this class can be used to define material based criticality
-    actions during a transport-depletion calculation.
+    The loop logic of this wrapper class is the following:
+
+    1. Run BatchwiseGeom and return geometrical coefficient
+    2. check if step index equals user definde dilute interval
+    3.1 if not, update geometry
+    3.2 if yes, set geometrical coefficient to user-defined restart level and
+    run BatchwiseMatDilute
+
+    In this case if the bracket upper geometrical limit is hitted,
+    simply stop the simulation.
 
     An instance of this class can be passed directly to an instance of the
     integrator class, such as :class:`openmc.deplete.CECMIntegrator`.
@@ -1248,9 +1265,9 @@ class BatchwiseWrap2():
     Parameters
     ----------
     bw_geom : BatchwiseGeom
-        openmc.deplete.msr.MsrBatchwiseGeom object
-    bw_mat : MsrBatchwiseMat
-        openmc.deplete.msr.MsrBatchwiseMat object
+        openmc.deplete.batchwise.BatchwiseGeom object
+    bw_mat : BatchwiseMat
+        openmc.deplete.batchwise.BatchwiseMat object
     dilute_interval : int
         Frequency of dilution in number of timesteps
     first_dilute : int or None
@@ -1285,7 +1302,13 @@ class BatchwiseWrap2():
         self.interrupt = interrupt
 
     def _update_volumes_after_depletion(self, x):
-            self.bw_geom._update_volumes_after_depletion(x)
+        """
+        Parameters
+        ----------
+        x : list of numpy.ndarray
+            Total atom concentrations
+        """
+        self.bw_geom._update_volumes_after_depletion(x)
 
     def msr_search_for_keff(self, x, step_index):
         """
@@ -1293,11 +1316,11 @@ class BatchwiseWrap2():
         Will set the root of the `search_for_keff` function to the atoms
         concentrations vector.
         Parameters
-        ------------
+        ----------
         x : list of numpy.ndarray
             Total atoms concentrations
         Returns
-        ------------
+        -------
         x : list of numpy.ndarray
             Updated total atoms concentrations
         """
@@ -1317,4 +1340,8 @@ class BatchwiseWrap2():
                 from pathlib import Path
                 print(f'Reached maximum of {self.bw_geom.bracket_limit[1]} cm'
                        ' exit..')
+                Path('sim.done').touch()
+
+                for rank in range(comm.size):
+                    comm.Abort()
         return x
