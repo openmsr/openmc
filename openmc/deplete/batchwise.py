@@ -71,7 +71,7 @@ class Batchwise(ABC):
     """
     def __init__(self, operator, model, bracket, bracket_limit,
                  bracketed_method='brentq', tol=0.01, target=1.0,
-                 print_iterations=True, search_for_keff_output=False,
+                 print_iterations=True, search_for_keff_output=True,
                  atom_density_limit=0.0, interrupt=False):
 
         self.operator = operator
@@ -377,7 +377,7 @@ class BatchwiseGeom(Batchwise):
     """
     def __init__(self, operator, model, cell_id_or_name, bracket,
                  bracket_limit, bracketed_method='brentq', tol=0.01, target=1.0,
-                 print_iterations=True, search_for_keff_output=False,
+                 print_iterations=True, search_for_keff_output=True,
                  atom_density_limit=0.0, interrupt=False):
 
         super().__init__(operator, model, bracket, bracket_limit,
@@ -578,7 +578,7 @@ class BatchwiseGeomTrans(BatchwiseGeom):
     """
     def __init__(self, operator, model, cell_id_or_name, axis, bracket,
                  bracket_limit, bracketed_method='brentq', tol=0.01, target=1.0,
-                 print_iterations=True, search_for_keff_output=False,
+                 print_iterations=True, search_for_keff_output=True,
                  atom_density_limit=0.0, interrupt=False):
 
         super().__init__(operator, model, cell_id_or_name, bracket, bracket_limit,
@@ -673,7 +673,7 @@ class BatchwiseMat(Batchwise):
 
     def __init__(self, operator, model, mats_id_or_name, mat_vector, bracket,
                  bracket_limit, bracketed_method='brentq', tol=0.01, target=1.0,
-                 print_iterations=True, search_for_keff_output=False,
+                 print_iterations=True, search_for_keff_output=True,
                  atom_density_limit=0.0, restart_level=0.0, interrupt=False):
 
         super().__init__(operator, model, bracket, bracket_limit,
@@ -859,7 +859,7 @@ class BatchwiseMatRefuel(BatchwiseMat):
 
     def __init__(self, operator, model, mats_id_or_name, mat_vector, bracket,
                  bracket_limit, bracketed_method='brentq', tol=0.01, target=1.0,
-                 print_iterations=True, search_for_keff_output=False,
+                 print_iterations=True, search_for_keff_output=True,
                  atom_density_limit=0.0, restart_level=0.0, interrupt=False):
 
         super().__init__(operator, model, mats_id_or_name, mat_vector, bracket, bracket_limit,
@@ -1045,7 +1045,7 @@ class BatchwiseMatDilute(BatchwiseMat):
     """
     def __init__(self, operator, model, mats_id_or_name, mat_vector, bracket,
                  bracket_limit, bracketed_method='brentq', tol=0.01, target=1.0,
-                 print_iterations=True, search_for_keff_output=False,
+                 print_iterations=True, search_for_keff_output=True,
                  atom_density_limit=0.0, restart_level=0.0, interrupt=False):
 
         super().__init__(operator, model, mats_id_or_name, mat_vector, bracket,
@@ -1325,7 +1325,7 @@ class BatchwiseWrap2():
             Updated total atoms concentrations
         """
         #Check if index lies in dilution timesteps
-        if step_index in [self.first_dilute, self.dilute_interval]:
+        if step_index in [self.first_dilute, self.dilute_interval] and self.bw_geom._get_cell_attrib() <= self.bw_mat.restart_level:
             # restart level and perform dilution
             self.bw_geom._set_cell_attrib(self.bw_mat.restart_level)
             x = self.bw_mat.msr_search_for_keff(x, step_index)
