@@ -1062,7 +1062,9 @@ void sample_fission_neutron(
 
     // set the delayed group for the particle born from fission
     site->delayed_group = group;
-
+    if (settings::create_delayed_neutrons_static) {
+      site->wgt = settings::weight_delayed_neutrons;
+    }
   } else {
     // ====================================================================
     // PROMPT NEUTRON SAMPLED

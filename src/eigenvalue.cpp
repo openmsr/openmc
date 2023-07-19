@@ -343,7 +343,7 @@ void calculate_average_keff()
 
     // Determine mean
     simulation::keff = simulation::k_sum[0] / n;
-
+    
     if (n > 1) {
       double t_value;
       if (settings::confidence_intervals) {
