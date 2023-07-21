@@ -26,7 +26,7 @@ from .results import Results
 from .pool import deplete
 from .transfer_rates import TransferRates
 from .batchwise import (BatchwiseGeomTrans, BatchwiseMatDilute,
-            BatchwiseMatRefuel, BatchwiseWrap1, BatchwiseWrap2)
+            BatchwiseMatRefuel, BatchwiseWrap1, BatchwiseWrap2, BatchwiseWrapFlex)
 
 __all__ = [
     "OperatorResult", "TransportOperator",
@@ -938,7 +938,7 @@ class Integrator(ABC):
             Type of wrapper function. So far only '1' or '2'.
         **kwargs
             keyword arguments that are passed to the batchwise wrapper class.
-            
+
         """
         if self.batchwise.__class__ is not list:
             self.batchwise = [self.batchwise]
@@ -956,6 +956,8 @@ class Integrator(ABC):
             self.batchwise = BatchwiseWrap1(*args.values())
         elif type == '2':
             self.batchwise = BatchwiseWrap2(*args.values(), **kwargs)
+        elif type == 'flex':
+            self.batchwise = BatchwiseWrapFlex(*args.values(), **kwargs)
 
 @add_params
 class SIIntegrator(Integrator):
