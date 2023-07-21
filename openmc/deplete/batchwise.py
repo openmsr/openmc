@@ -17,6 +17,46 @@ from openmc.data import atomic_mass, AVOGADRO, ELEMENT_SYMBOL
 import openmc.lib
 from openmc.mpi import comm
 
+# The following methods are made public as they might be of need of other classes
+# than the flex one
+
+def _fill_cell_with_material(self, cell_id, mat_name):
+    """
+    Replace fill material of exisitng cell
+
+    Parameters
+    ----------
+    cell_id : int
+        Id or str of cell to fill with material
+    mat_name : str
+        Name of material to fill cell with
+    """
+
+
+def _nuclide_density(self, mat_name, nuc):
+    """
+    Return nuclide of specific nuclide in a material
+    Parameters
+    ----------
+    mat_name : str
+        Name of material to look for nuclide
+    nuclide : str
+        Name of nuclide to look for
+    Returns
+    -------
+    atoms : float
+        Nuclide atoms number
+
+    """
+    mat_id = [id for id,mat in openmc.lib.materials.items() \
+                if mat.name == mat_name][0]
+    nuc_index = openmc.lib.materials[mat_id].nuclides.index(nuc)
+
+
+    return openmc.lib.materials[mat_id].densities[nuc_index] * atomic_mass(nuc)  \
+           / openmc.lib.materials[mat_id].get_density('g/cm3') / AVOGADRO / 1.0e-24
+
+
 
 class Batchwise(ABC):
     """Abstract Base Class for implementing depletion batchwise classes.
@@ -155,6 +195,44 @@ class Batchwise(ABC):
         _model :  openmc.model.Model
             OpenMC parametric model
         """
+
+    def _get_cell_id(self, val):
+        """Helper method for getting cell id from cell instance or cell name.
+        Parameters
+        ----------
+        val : Openmc.Cell or str or int representing Cell
+        Returns
+        -------
+        id : str
+            Cell id
+        """
+        if isinstance(val, Cell):
+            check_value('Cell id', val.id, [cell.id for cell in \
+                                self.model.geometry.get_all_cells().values()])
+            val = val.id
+
+        elif isinstance(val, str):
+            if val.isnumeric():
+                check_value('Cell id', val, [str(cell.id) for cell in \
+                                self.model.geometry.get_all_cells().values()])
+                val = int(val)
+            else:
+                check_value('Cell name', val, [cell.name for cell in \
+                                self.model.geometry.get_all_cells().values()])
+
+                val = [cell.id for cell in \
+                    self.model.geometry.get_all_cells().values() \
+                    if cell.name == val][0]
+
+        elif isinstance(val, int):
+            check_value('Cell id', val, [cell.id for cell in \
+                                self.model.geometry.get_all_cells().values()])
+
+        else:
+            ValueError(f'Cell: {val} is not recognized')
+
+        return val
+
     def _msr_search_for_keff(self, val):
         """
         Perform the criticality search for a given parametric model.
@@ -384,45 +462,7 @@ class BatchwiseGeom(Batchwise):
                          bracketed_method, tol, target, print_iterations,
                          search_for_keff_output, atom_density_limit, interrupt)
 
-        self.cell_id = self._get_cell_id(cell_id_or_name)
-
-
-    def _get_cell_id(self, val):
-        """Helper method for getting cell id from cell instance or cell name.
-        Parameters
-        ----------
-        val : Openmc.Cell or str or int representing Cell
-        Returns
-        -------
-        id : str
-            Cell id
-        """
-        if isinstance(val, Cell):
-            check_value('Cell id', val.id, [cell.id for cell in \
-                                self.model.geometry.get_all_cells().values()])
-            val = val.id
-
-        elif isinstance(val, str):
-            if val.isnumeric():
-                check_value('Cell id', val, [str(cell.id) for cell in \
-                                self.model.geometry.get_all_cells().values()])
-                val = int(val)
-            else:
-                check_value('Cell name', val, [cell.name for cell in \
-                                self.model.geometry.get_all_cells().values()])
-
-                val = [cell.id for cell in \
-                    self.model.geometry.get_all_cells().values() \
-                    if cell.name == val][0]
-
-        elif isinstance(val, int):
-            check_value('Cell id', val, [cell.id for cell in \
-                                self.model.geometry.get_all_cells().values()])
-
-        else:
-            ValueError(f'Cell: {val} is not recognized')
-
-        return val
+        self.cell_id = super()._get_cell_id(cell_id_or_name)
 
     def _get_cell_attrib(self):
         """
@@ -1129,7 +1169,8 @@ class BatchwiseMatDilute(BatchwiseMat):
         x : list of numpy.ndarray
             Updated total atoms concentrations
         """
-        # Don't broadcast here
+        # Don't broadcast here, each mpi processor will modify its x vector
+        # accordingly  
         number_i = self.operator.number
 
         for mat_id in self.mats_id:
@@ -1324,6 +1365,7 @@ class BatchwiseWrap2():
         x : list of numpy.ndarray
             Updated total atoms concentrations
         """
+        breakpoint()
         #Check if index lies in dilution timesteps
         if step_index in [self.first_dilute, self.dilute_interval] and self.bw_geom._get_cell_attrib() <= self.bw_mat.restart_level:
             # restart level and perform dilution
@@ -1345,3 +1387,179 @@ class BatchwiseWrap2():
                 for rank in range(comm.size):
                     comm.Abort()
         return x
+
+# class BatchwiseWrapFlex():
+#     """
+#     Batchwise wrapper class, it wraps BatchwiseGeom and BatchwiseMat instances,
+#     with some user defined logic.
+#
+#     This class should probably not be defined here, but we can keep it now for
+#     convenience
+#
+#     The loop logic of this wrapper class is the following:
+#
+#     1. Run BatchwiseGeom and return geometrical coefficient
+#     2. check if step index equals user definde dilute interval
+#     3.1 if not, update geometry
+#     3.2 if yes, set geometrical coefficient to user-defined restart level and
+#     run BatchwiseMatDilute
+#
+#     In this case if the bracket upper geometrical limit is hitted,
+#     simply stop the simulation.
+#
+#     An instance of this class can be passed directly to an instance of the
+#     integrator class, such as :class:`openmc.deplete.CECMIntegrator`.
+#
+#     Parameters
+#     ----------
+#     bw_geom : BatchwiseGeom
+#         openmc.deplete.batchwise.BatchwiseGeom object
+#     bw_mat : BatchwiseMat
+#         openmc.deplete.batchwise.BatchwiseMat object
+#     dilute_interval : int
+#         Frequency of dilution in number of timesteps
+#     first_dilute : int or None
+#         Timestep index for first dilution, to be used during restart simulation
+#         Default to None
+#     """
+#
+#     def __init__(self, bw_geom, cell_pattern, fill_mat_name, mat_vector, nuc, limit):
+#         if not isinstance(bw_geom, BatchwiseGeom):
+#             raise ValueError(f'{bw_geom} is not a valid instance of'
+#                               ' BatchwiseGeom class')
+#         else:
+#             self.bw_geom = bw_geom
+#
+#         # List of cell ids containing cell_pattern
+#         self.cells_id = [id for id,c in openmc.lib.cells.items() \
+#                       if c.name.startswith(cell_pattern)]
+#
+#         check_value('fill_mat_name', fill_mat_name,
+#                     [mat.name for mat in self.model.materials])
+#
+#         self.fill_mat_name = fill_mat_name
+#         self.mat_vector = mat_vector
+#         self.nuclide = nuclide
+#         self.limit = limit
+#
+#     def _update_volumes_after_depletion(self, x):
+#         """
+#         Parameters
+#         ----------
+#         x : list of numpy.ndarray
+#             Total atom concentrations
+#         """
+#         self.bw_geom._update_volumes_after_depletion(x)
+#
+#     def _replace_material(self, cell_id, mat_name, elements, density):
+#         """
+#         Add elements to material
+#         Parameters
+#         ----------
+#         cell_id : int
+#             Id or str of cell to fill with material
+#         mat_name : str
+#             Material name
+#         elements : dict
+#             Element dictionary, keys are nuclides and values composition
+#         volume : float
+#             Total volume to add, in cm3
+#         density : float
+#             Total mass density material to add, in g/cm3
+#         """
+#         # Firstly fill the existing cell with another existing material
+#         mat_id = [id for id,mat in openmc.lib.materials.items() \
+#                     if mat.name == mat_name][0]
+#         # store and mat id of material to replace
+#         _vol = openmc.lib.cells[cell_id].fill.volume
+#         _mat_id = openmc.lib.cells[cell_id].fill.id
+#
+#         openmc.lib.cells[cell_id].fill = openmc.lib.materials[mat_id]
+#         # Update the mateiral volume including the new filled region
+#         openmc.lib.materials[mat_id].volume += vol
+#
+#         # Secondly we want to update the nuclide densities, both in
+#         # openmc.lib and in the x vector
+#         for rank in range(comm.size):
+#             number_i = comm.bcast(op.number, root=rank)
+#
+#             for i, mat in enumerate(number_i.materials):
+#                 nuclides = []
+#                 densities = []
+#
+#                 if int(mat) == mat_id:
+#                     for nuc in number_i.nuclides:
+#                         # Dilute nuclides with cross sections (with data)
+#                         if nuc in op.nuclides_with_data:
+#                             # [#atoms/b-cm]
+#                             val = 1.0e-24 * number_i.get_atom_density(mat,nuc)
+#
+#                             if nuc in elements:
+#                                 val += 1.0e-24 * density * AVOGADRO / atomic_mass(nuc) \
+#                                         * elements[nuc]
+#
+#                     openmc.lib.materials[mat_id].set_densities(nuclides, densities)
+#
+#                     mat_idx = self.local_mats.index(str(mat_id))
+#
+#                     for nuc, dens in zip(openmc.lib.materials[mat_id].nuclides,
+#                                          openmc.lib.materials[mat_id].densities):
+#                         if nuc in number_i.burnable_nuclides:
+#                             nuc_idx = number_i.burnable_nuclides.index(nuc)
+#                             # convert [#atoms/b-cm] into [#atoms]
+#                             x[mat_idx][nuc_idx] = dens / 1.0e-24 * \
+#                                                   number_i.volume[mat_idx]
+#                         else:
+#                             #Atom density needs to be in [#atoms/cm3]
+#                             number_i.set_atom_density(mat_idx, nuc, dens / 1.0e-24)
+#
+#                     for nuc in number_i.burnable_nuclides:
+#                         if nuc not in self.operator.nuclides_with_data:
+#                             nuc_idx = number_i.burnable_nuclides.index(nuc)
+#                             x[mat_idx][nuc_idx] *= (1-res)
+#                 elif int(mat) == _mat_id:
+#                     mat_idx = self.local_mats.index(str(_mat_id))
+#                     for nuc openmc.lib.materials[_mat_id].nuclides:
+#                         if nuc in number_i.burnable_nuclides:
+#                             nuc_idx = number_i.burnable_nuclides.index(nuc)
+#                             x[mat_idx][nuc_idx] = 1e-3 #can we set 0?
+#                         else:
+#                             number_i.set_atom_density(mat_idx, nuc, 1e-3)
+#
+#         return x
+#
+#     def msr_search_for_keff(self, x, step_index):
+#         """
+#         Perform the criticality search on the parametric material model.
+#         Will set the root of the `search_for_keff` function to the atoms
+#         concentrations vector.
+#         Parameters
+#         ----------
+#         x : list of numpy.ndarray
+#             Total atoms concentrations
+#         Returns
+#         -------
+#         x : list of numpy.ndarray
+#             Updated total atoms concentrations
+#         """
+#         if self.limit >= self._nuclide_density(self.fill_mat_name, self.nuclide):
+#             if self.cells_id:
+#                 cell_id = self.cells_id[0]
+#                 _fill_cell_with_material(cell_id)
+#                 _add_to_material(self.bw_geom.operator, self.fill_mat_name,
+#                                  self.mat_vector)
+#                 self.cells_id.remove(cell_id)
+#             else:
+#                 continue
+#
+#         x = self.bw_geom.msr_search_for_keff(x, step_index)
+#         # in this case if upper limit gets hit, stop directly
+#         if self.bw_geom._get_cell_attrib() >= self.bw_geom.bracket_limit[1]:
+#             from pathlib import Path
+#             print(f'Reached maximum of {self.bw_geom.bracket_limit[1]} cm'
+#                    ' exit..')
+#             Path('sim.done').touch()
+#
+#             for rank in range(comm.size):
+#                 comm.Abort()
+#         return x
