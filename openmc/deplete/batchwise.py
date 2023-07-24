@@ -498,7 +498,7 @@ class BatchwiseGeom(Batchwise):
                         if val > self.atom_density_limit:
                             nuclides.append(nuc)
                             densities.append(val)
-
+                breakpoint()
                 #set nuclide densities to model in memory (C-API)
                 openmc.lib.materials[int(mat)].set_densities(nuclides, densities)
 
@@ -1462,16 +1462,15 @@ class BatchwiseWrapFlex():
 
         fill_mat_id = [id for id,mat in openmc.lib.materials.items() \
                     if mat.name == self.fill_mat_name][0]
-        # the volume is the conserved quantity
+        # Get data of cell to replace
         old_mat_vol = openmc.lib.cells[cell_id].fill.volume
         old_mat_id = openmc.lib.cells[cell_id].fill.id
 
-        # Firstly fill the cell with the existing material
+        # Firstly, fill the cell to replace with the replacing material
         openmc.lib.cells[cell_id].fill = openmc.lib.materials[fill_mat_id]
 
-
-        # Secondly we want to update the nuclide densities, both in
-        # openmc.lib and in the x vector
+        # Secondly, update the nuclide densities, both in the
+        # openmc.lib and in the x concentration vector
         op = self.bw_geom.operator
         for rank in range(comm.size):
             number_i = comm.bcast(op.number, root=rank)
@@ -1482,14 +1481,15 @@ class BatchwiseWrapFlex():
 
                 if int(mat) == fill_mat_id:
                     for nuc in number_i.nuclides:
-                        # if cross sections (with data)
+                        # Only modify nuclides with cross section data available
                         if nuc in op.nuclides_with_data:
                             # Get number of atoms
                             val = number_i.get_atom_density(mat,nuc) * \
                                   number_i.get_mat_volume(i)
 
                             if nuc in self.mat_vector:
-                                # add number of atoms
+                                # convert nuclide to add in [number of atoms]
+                                # keeping constant the volume
                                 val += self.density * AVOGADRO / atomic_mass(nuc) \
                                        * self.mat_vector[nuc] * old_mat_vol
 
@@ -1498,7 +1498,7 @@ class BatchwiseWrapFlex():
                             if val > self.bw_geom.atom_density_limit / 1.0e-24 * \
                                 (number_i.get_mat_volume(i) + old_mat_vol):
                                 # Now we can dilute by the new total volume
-                                # and get val in [atoms/b-cm]
+                                # and get val back in [atoms/b-cm]
                                 val *=  1.0e-24 / (number_i.get_mat_volume(i) + old_mat_vol)
                                 nuclides.append(nuc)
                                 densities.append(val)
@@ -1507,7 +1507,8 @@ class BatchwiseWrapFlex():
                     # Update the material volume adding the old material volume
                     openmc.lib.materials[fill_mat_id].volume += old_mat_vol
 
-                    # Now update the x vector
+                    # Now update the x conc vector diluting all nuclides by the
+                    # new volume
                     mat_idx = op.local_mats.index(str(fill_mat_id))
 
                     for nuc, dens in zip(openmc.lib.materials[fill_mat_id].nuclides,
@@ -1534,10 +1535,16 @@ class BatchwiseWrapFlex():
                     # Now Update the volume stored in AtomNumber
                     number_i.volume[mat_idx] += old_mat_vol
 
+                # Fill with 0 concentration the replace material.
                 elif int(mat) == old_mat_id:
                     # for the old mat, only need to update the x-vector, set to 0
                     mat_idx = op.local_mats.index(str(old_mat_id))
-                    x[mat_idx].fill(1e-3) #can we set 0?
+                    x[mat_idx].fill(0) #can we set 0?
+                    x[mat_idx][0] = 10 *  self.bw_geom.atom_density_limit / 1.0e-24 \
+                                    * openmc.lib.materials[old_mat_id].volume
+                    #hack:
+                    # set H-1 to 1 to 10 times the limit to prevent openmc.lib
+                    # complaining not having denisties >0 set
 
         return x
 
@@ -1555,10 +1562,14 @@ class BatchwiseWrapFlex():
         x : list of numpy.ndarray
             Updated total atoms concentrations
         """
-        if _nuclide_density(self.fill_mat_name, self.nuclide) >= self.limit:
+
+        nuc_density = _nuclide_density(self.fill_mat_name, self.nuclide)
+        print('{} denisty: {:.2f} [atoms/b-cm]'.format(self.nuclide, nuc_density))
+        breakpoint()
+        if nuc_density >= self.limit:
             if self.cells_id:
                 cell_id = self.cells_id[0]
-                self._include_cell(x, cell_id)
+                x = self._include_cell(x, cell_id)
                 self.cells_id.remove(cell_id)
 
         x = self.bw_geom.msr_search_for_keff(x, step_index)
