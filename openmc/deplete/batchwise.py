@@ -1445,9 +1445,9 @@ class BatchwiseWrapFlex():
         """
         self.bw_geom._update_volumes_after_depletion(x)
 
-    def _replace_material(self, x, cell_id):
+    def _include_cell(self, x, cell_id):
         """
-        Add elements to material
+        Replace cell material and include it with exisitng material.
         Parameters
         ----------
         x : list of numpy.ndarray
@@ -1462,7 +1462,6 @@ class BatchwiseWrapFlex():
 
         fill_mat_id = [id for id,mat in openmc.lib.materials.items() \
                     if mat.name == self.fill_mat_name][0]
-        # store and mat id of material to replace
         # the volume is the conserved quantity
         old_mat_vol = openmc.lib.cells[cell_id].fill.volume
         old_mat_id = openmc.lib.cells[cell_id].fill.id
@@ -1559,7 +1558,7 @@ class BatchwiseWrapFlex():
         if _nuclide_density(self.fill_mat_name, self.nuclide) >= self.limit:
             if self.cells_id:
                 cell_id = self.cells_id[0]
-                self._replace_material(x, cell_id)
+                self._include_cell(x, cell_id)
                 self.cells_id.remove(cell_id)
 
         x = self.bw_geom.msr_search_for_keff(x, step_index)
