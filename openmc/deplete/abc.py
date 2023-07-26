@@ -907,7 +907,7 @@ class Integrator(ABC):
         """
 
         if self.batchwise is None:
-            if type == 'trans':
+            if type in ['trans' , 'rot']:
                 self.batchwise = BatchwiseGeomTrans(self.operator,
                                                 self.operator.model, **kwargs)
             elif type == 'refuel':
@@ -918,7 +918,7 @@ class Integrator(ABC):
                                                 self.operator.model, **kwargs)
         else:
             self.batchwise = [self.batchwise]
-            if type == 'trans':
+            if type in ['trans', 'rot']:
                 self.batchwise.append(BatchwiseGeomTrans(self.operator,
                                                 self.operator.model, **kwargs))
             elif type == 'refuel':
@@ -944,6 +944,7 @@ class Integrator(ABC):
             self.batchwise = [self.batchwise]
 
         args = dict()
+        breakpoint()
         for arg, class_name in enumerate(['BatchwiseGeom', 'BatchwiseMat']):
             obj = [i for i in self.batchwise \
                    if i.__class__.__base__.__name__ == class_name]
