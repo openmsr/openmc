@@ -25,7 +25,7 @@ from .chain import Chain
 from .results import Results
 from .pool import deplete
 from .transfer_rates import TransferRates
-from .batchwise import (BatchwiseGeomTrans, BatchwiseMatDilute,
+from .batchwise import (BatchwiseGeomTrans, BatchwiseMatDilute, BatchwiseMatAdd,
             BatchwiseMatRefuel, BatchwiseWrap1, BatchwiseWrap2, BatchwiseWrapFlex)
 
 __all__ = [
@@ -907,15 +907,19 @@ class Integrator(ABC):
         """
 
         if self.batchwise is None:
-            if type in ['trans' , 'rot']:
+            if type in ['translation' , 'rotation']:
                 self.batchwise = BatchwiseGeomTrans(self.operator,
                                                 self.operator.model, **kwargs)
             elif type == 'refuel':
                 self.batchwise = BatchwiseMatRefuel(self.operator,
                                                 self.operator.model, **kwargs)
             elif type == 'dilute':
-                self.batchwise = BatchwiseGeomDilute(self.operator,
+                self.batchwise = BatchwiseMatDilute(self.operator,
                                                 self.operator.model, **kwargs)
+            elif type == 'add':
+                self.batchwise = BatchwiseMatAdd(self.operator,
+                                                self.operator.model, **kwargs)
+
         else:
             self.batchwise = [self.batchwise]
             if type in ['trans', 'rot']:
@@ -926,6 +930,9 @@ class Integrator(ABC):
                                                 self.operator.model, **kwargs))
             elif type == 'dilute':
                 self.batchwise.append(BatchwiseMatDilute(self.operator,
+                                                self.operator.model, **kwargs))
+            elif type == 'add':
+                self.batchwise.append(BatchwiseMatAdd(self.operator,
                                                 self.operator.model, **kwargs))
 
     def add_batchwise_wrap(self, type, **kwargs):
@@ -943,15 +950,18 @@ class Integrator(ABC):
         if self.batchwise.__class__ is not list:
             self.batchwise = [self.batchwise]
 
-        args = dict()
-        breakpoint()
-        for arg, class_name in enumerate(['BatchwiseGeom', 'BatchwiseMat']):
-            obj = [i for i in self.batchwise \
-                   if i.__class__.__base__.__name__ == class_name]
-            if obj:
-                args[arg] = obj[0]
+        args = {0:None, 1:None}
+
+        for batchwise_group in self.batchwise:
+            if isinstance(batchwise_group, list):
+                batchwise_class = batchwise_group[0]
             else:
-                args[arg] = None
+                batchwise_class = batchwise_group
+
+            if batchwise_class.__class__.__base__.__name__ == 'BatchwiseGeom':
+                args[0] = batchwise_group
+            elif batchwise_class.__class__.__base__.__name__ == 'BatchwiseMat':
+                args[1] = batchwise_group
 
         if type == '1':
             self.batchwise = BatchwiseWrap1(*args.values())
