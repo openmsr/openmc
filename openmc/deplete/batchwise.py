@@ -601,17 +601,17 @@ class BatchwiseGeomTrans(BatchwiseGeom):
     vector : numpy.array
         translation vector
     """
-    def __init__(self, operator, model, type, cell_id_or_name, axis, bracket,
+    def __init__(self, type, operator, model, cell_id_or_name, axis, bracket,
                  bracket_limit, bracketed_method='brentq', tol=0.01, target=1.0,
                  print_iterations=True, search_for_keff_output=True,
                  atom_density_limit=0.0, interrupt=False):
 
+        check_value('type', type, ['translation','rotation'])
+        self.attrib_name = type
+
         super().__init__(operator, model, cell_id_or_name, bracket, bracket_limit,
                          bracketed_method, tol, target, print_iterations,
                          search_for_keff_output, atom_density_limit, interrupt)
-
-        check_value('type', type, ['translation','rotation'])
-        self.attrib_name = type
 
         #index of cell translation direction axis
         check_value('axis', axis, [0,1,2])
@@ -1244,7 +1244,7 @@ class BatchwiseMatAdd(BatchwiseMat):
                          bracket_limit, bracketed_method, tol, target, print_iterations,
                          search_for_keff_output, atom_density_limit,
                          restart_level, interrupt)
-        self.denisty = density
+        self.density = density
         self.volume_to_add = volume
 
     def _model_builder(self, param):
@@ -1263,28 +1263,31 @@ class BatchwiseMatAdd(BatchwiseMat):
         _model :  openmc.model.Model
             OpenMC parametric model
         """
-    def _update_atoms(self, x, mat_id, diff, vol):
+    def _update_densities(self, x, mat_id, atoms, vol):
 
-        breakpoint( )
         for rank in range(comm.size):
             number_i = comm.bcast(self.operator.number, root=rank)
+            mat_idx = self.local_mats.index(str(mat_id))
             nuclides = []
             densities = []
-            atoms = {}
             for nuc in number_i.nuclides:
                 # Only modify nuclides with cross section data available
                 if nuc in self.operator.nuclides_with_data:
-                    # Get number of atoms to update
-                    val = number_i.get_atom_density(str(mat_id) ,nuc) * abs(diff)
-                    nuclides.append(nuc)
-                    # store number of atoms difference, to transfer to out of core materials
-                    atoms[nuc] = val
-                    # obtain density, dividing by new volume
-                    densities.append(val / vol)
-            openmc.lib.materials[mat_id].set_densities(nuclides, densities)
-            #now update x vector
-            mat_idx = self.local_mats.index(str(mat_id))
+                    # number of atoms before volume change
+                    val = number_i.get_atom_density(str(mat_id) ,nuc) * number_i.volume[mat_idx]
+                    if nuc in atoms:
+                        # add atoms
+                        val += atoms[nuc]
+                    # obtain density [atoms/b-cm], dividing by new volume
+                    if val > 0.0:
+                        # divide by new volume to obtain density
+                        val *= 1.0e-24 / vol
+                        nuclides.append(nuc)
+                        densities.append(val)
 
+            openmc.lib.materials[mat_id].set_densities(nuclides, densities)
+
+            #now update x vector
             for nuc, dens in zip(openmc.lib.materials[mat_id].nuclides,
                                  openmc.lib.materials[mat_id].densities):
                 if nuc in number_i.burnable_nuclides:
@@ -1292,65 +1295,26 @@ class BatchwiseMatAdd(BatchwiseMat):
                     # convert [#atoms/b-cm] into [#atoms]
                     x[mat_idx][nuc_idx] = dens / 1.0e-24 * vol
                 else:
-                    #Atom density needs to be in [#atoms/cm3]
+                    #Divide by 1.0e-24, atom density here must be in [#atoms/cm3]
                     number_i.set_atom_density(mat_idx, nuc, dens / 1.0e-24)
 
-            for nuc in number_i.burnable_nuclides:
-                if nuc not in self.operator.nuclides_with_data:
-                    nuc_idx = number_i.burnable_nuclides.index(nuc)
-                    # Dilute number of atoms in new volume
-                    x[mat_idx][nuc_idx] /= number_i.volume[mat_idx] * abs(diff)
-                    atoms[nuc] = x[mat_idx][nuc_idx]
-        return x, atoms
+            # for nuc in number_i.burnable_nuclides:
+            #     if nuc not in self.operator.nuclides_with_data:
+            #         nuc_idx = number_i.burnable_nuclides.index(nuc)
+            #         # Dilute number of atoms in new volume
+            #         x[mat_idx][nuc_idx] *= vol / number_i.volume[mat_idx]
 
-    def _add_atoms(self, x, mat_id, add_from, vol_to_add):
-        """
-        In general add/remove elements from a material, updating the number
-        of atoms and the total volume.
-        Add/remove number of atoms from a material, based on user input dictionary.
+        return x
 
-        """
-        breakpoint()
+    def _dilute_x(self, x, mat_id, vol):
+
+        number_i = self.operator.number
         mat_idx = self.local_mats.index(str(mat_id))
-        for rank in range(comm.size):
-            number_i = comm.bcast(self.operator.number, root=rank)
-            nuclides = []
-            densities = []
-            # First update elements in library
-            for nuc in number_i.nuclides:
-                # Only modify nuclides with cross section data available
-                if nuc in self.operator.nuclides_with_data:
-                    # Get number of atoms
-                    val = number_i.get_atom_density(str(mat_id), nuc) * number_i.volume[mat_idx]
-                    if nuc in add_from:
-                        # add/remove number of atoms
-                        val += add_from[nuc]
-                    # Obtain density dividing by new volume
-                    val *= 1.0e-24 / (number_i.volume[mat_idx] + vol_to_add)
-                    nuclides.append(nuc)
-                    densities.append(val)
-            openmc.lib.materials[mat_id].set_densities(nuclides, densities)
-
-            # Secondly update elements in x vector
-            for nuc, dens in zip(openmc.lib.materials[mat_id].nuclides,
-                                 openmc.lib.materials[mat_id].densities):
-                if nuc in number_i.burnable_nuclides:
-                    nuc_idx = number_i.burnable_nuclides.index(nuc)
-                    # convert [#atoms/b-cm] into [#atoms]
-                    x[mat_idx][nuc_idx] = dens / 1.0e-24 * (number_i.volume[mat_idx] + vol_to_add)
-                else:
-                    #Atom density needs to be in [#atoms/cm3]
-                    number_i.set_atom_density(mat_idx, nuc, dens / 1.0e-24)
-
-            for nuc in number_i.burnable_nuclides:
-                if nuc not in self.operator.nuclides_with_data:
-                    nuc_idx = number_i.burnable_nuclides.index(nuc)
-                    # Dilute number of atoms in new volume
-                    if nuc in add_from:
-                        x[mat_idx][nuc_idx] += add_from[nuc]
-
-                    x[mat_idx][nuc_idx] /= number_i.volume[mat_idx] * abs(diff)
-            return x
+        for nuc in number_i.burnable_nuclides:
+            nuc_idx = number_i.burnable_nuclides.index(nuc)
+            # convert [#atoms/b-cm] into [#atoms]
+            x[mat_idx][nuc_idx] *= vol / number_i.volume[mat_idx]
+        return x
 
     def _find_cell_materials(self, cell_id):
         return [cell.fill.name for cell in \
@@ -1358,57 +1322,82 @@ class BatchwiseMatAdd(BatchwiseMat):
 
     def _find_ofc_material_id(self, mat_name):
         # split by "-" and "_" characters
-        return [mat.id for mat in self.model.materials if mat_name and 'ofc' \
-                in re.split(', |-|-|\+', mat.name)]
+        return [mat.id for mat in self.model.materials if \
+            all(x in re.split(', |-|-|\+', mat.name) for x in [mat_name, 'ofc'])]
 
     def _calc_volumes(self):
-        comm.barrier()
         openmc.lib.calculate_volumes()
         comm.barrier()
-        time.sleep(1)
         return openmc.VolumeCalculation.from_hdf5('volume_1.h5')
 
     def _update_materials(self, x, cell_id):
         """
-        Materials to update
+        Materials update after a geometrical change
         """
+        # firstly, calculate the new volumes
         res = self._calc_volumes()
 
-        for rank in range(comm.size):
-            print(res.volumes)
-            number_i = comm.bcast(self.operator.number, root=rank)
+        print(res.volumes)
+        number_i = self.operator.number
 
-            for mat_name in self._find_cell_materials(cell_id):
-                print(mat_name)
-                mat_id = super()._get_mat_id(mat_name)
-                print(mat_id)
-                #mat index in AtomNumber
-                mat_index = number_i.index_mat[str(mat_id)]
+        for mat_name in self._find_cell_materials(cell_id):
+            print(mat_name)
+            mat_id = super()._get_mat_id(mat_name)
+            mat_index = number_i.index_mat[str(mat_id)]
 
-                old_vol = number_i.volume[mat_index]
-                new_vol = res.volumes[int(mat_id)].n
-                diff = (new_vol - old_vol)
+            vol_new = res.volumes[int(mat_id)].n
+            vol_diff = vol_new - number_i.volume[mat_index]
 
-                # re-calculate densities and return atoms difference in core
-                x, atoms = self._update_atoms(x, mat_id, diff, new_vol)
-                # assign new volume in core
-                number_i.volume[mat_index] = new_vol
-                # for the flex, don't conserve the volume bit add a fix amount
-                # out-of-core, based on user input
-                if mat_id in self.mats_id:
-                    diff = self.volume_to_add
-                    atoms = {nuc: self.density * self.volume_to_add / \
-                             atomic_mass(nuc) * AVOGADRO * frac \
-                             for nuc, frac in self.mat_vector.items()}
+            # add external volume
+            if mat_id in self.mats_id:
+                #atoms density
+                atom_dens = {nuc: self.density / \
+                         atomic_mass(nuc) * AVOGADRO * frac \
+                         for nuc, frac in self.mat_vector.items()}
 
-                # Find material id of respective ofc part
                 if self._find_ofc_material_id(mat_name):
-                    mat_id = self._find_ofc_material_id(mat_name)[0]
-                    mat_index = number_i.index_mat[str(mat_id)]
-                # If ofc material not present, add to the in-core
-                x = self._add_atoms(x, mat_id, atoms, diff)
-                number_i.volume[mat_index] += diff
-        breakpoint()
+                    mat_ofc_id = self._find_ofc_material_id(mat_name)[0]
+                    mat_ofc_index = number_i.index_mat[str(mat_ofc_id)]
+                    #update in core densities
+                    atoms = {nuc: i*vol_diff for nuc,i in atom_dens.items()}
+                    x = self._update_densities(x, mat_id, atoms, vol_new)
+                    number_i.volume[mat_index] = vol_new
+                    #update out of core densities taking the rest of the volume
+                    vol_ofc_new = number_i.volume[mat_ofc_index] + (self.volume_to_add-vol_diff)
+                    atoms = {nuc: i*(self.volume_to_add-vol_diff) for nuc,i in atom_dens.items()}
+                    x = self._update_densities(x, mat_ofc_id, atoms, vol_ofc_new)
+                    number_i.volume[mat_ofc_index] = vol_ofc_new
+                else:
+                    #simply add all volume in core
+                    vol_new = number_i.volume[mat_index] + self.volume_to_add
+                    atoms = {nuc: i*self.volume_to_add for nuc,i in atom_dens.items()}
+                    x = self._update_densities(x, mat_id, atoms, vol_new)
+                    number_i.volume[mat_index] = vol_new
+
+            else:
+                # in both cases conserve total volume.
+                if self._find_ofc_material_id(mat_name):
+                    # move atoms from in-core to out-core
+                    mat_ofc_id = self._find_ofc_material_id(mat_name)[0]
+                    mat_ofc_index = number_i.index_mat[str(mat_ofc_id)]
+                    # Note that densities do not need to be updated as we
+                    # are assuming homegeneity bewtween in core and out core
+                    # only need to redistribute number of atoms between in core
+                    # and out core.
+                    # Update x in-core
+                    x = self._dilute_x(x, mat_id, vol_new)
+                    # Update x out-core. Nothe: If vol_diff is negative will
+                    # be added, while if positive will be removed
+                    vol_ofc_new = number_i.volume[mat_ofc_index] - vol_diff
+                    x = self._dilute_x(x, mat_ofc_id, vol_ofc_new)
+                    number_i.volume[mat_index] = vol_new
+                    number_i.volume[mat_ofc_index] = vol_ofc_new
+                else:
+                    #in this case we don't need to do anything as we have only
+                    #one material for in-core and out-core. The total
+                    # volume is automatically conserved.
+                    continue
+
         return x
 
 class BatchwiseWrap1():
@@ -1438,19 +1427,20 @@ class BatchwiseWrap1():
         openmc.deplete.batchwise.BatchwiseMat object
     """
 
-    def __init__(self, bw_geom, bw_mat=None, interrupt=False):
+    def __init__(self, bw_list, interrupt=False):
 
-        if not isinstance(bw_geom, BatchwiseGeom):
-            raise ValueError(f'{bw_geom} is not a valid instance of'
-                              ' BatchwiseGeom class')
+        self.bw_mat = None
+        if isinstance(bw_list, list):
+            for bw in bw_list:
+                if isinstance(bw, BatchwiseGeom):
+                    self.bw_geom = bw
+                elif isinstance(bw, BatchwiseMat):
+                    self.bw_mat = bw
+                else:
+                    raise ValueError(f'{bw} is not a valid instance of'
+                                      ' Batchwise class')
         else:
-            self.bw_geom = bw_geom
-
-        if not isinstance(bw_mat, BatchwiseMat):
-            raise ValueError(f'{bw_mat} is not a valid instance of'
-                              ' BatchwiseMat class')
-        else:
-            self.bw_mat = bw_mat
+            raise ValueError(f'{bw_list} is not a list')
 
         self.interrupt = interrupt
 
@@ -1532,20 +1522,20 @@ class BatchwiseWrap2():
         Default to None
     """
 
-    def __init__(self, bw_geom, bw_mat, dilute_interval, first_dilute=None,
+    def __init__(self, bw_list, dilute_interval, first_dilute=None,
                  interrupt=False):
 
-        if not isinstance(bw_geom, BatchwiseGeom):
-            raise ValueError(f'{bw_geom} is not a valid instance of'
-                              ' BatchwiseGeom class')
+        if isinstance(bw_list, list):
+            for bw in bw_list:
+                if isinstance(bw, BatchwiseGeom):
+                    self.bw_geom = bw
+                elif isinstance(bw, BatchwiseMat):
+                    self.bw_mat = bw
+                else:
+                    raise ValueError(f'{bw} is not a valid instance of'
+                                      ' Batchwise class')
         else:
-            self.bw_geom = bw_geom
-
-        if not isinstance(bw_mat, BatchwiseMat):
-            raise ValueError(f'{bw_mat} is not a valid instance of'
-                              ' BatchwiseMat class')
-        else:
-            self.bw_mat = bw_mat
+            raise ValueError(f'{bw_list} is not a list')
 
         #TODO check these values
         self.first_dilute = first_dilute
@@ -1638,31 +1628,30 @@ class BatchwiseWrapFlex():
         Default to None
     """
 
-    def __init__(self, bw_geom, bw_mat, nuclide, limit):
+    def __init__(self, bw_list, nuclide, limit, flex_fraction, span):
 
-        if isinstance(bw_geom, list):
-            for bw in bw_geom:
-                if not isinstance(bw, BatchwiseGeom):
+        if isinstance(bw_list, list):
+            for bw in bw_list:
+                if isinstance(bw, BatchwiseGeom):
+                    if bw.attrib_name == 'translation':
+                        self.bw_geom_trans = bw
+                    elif bw.attrib_name == 'rotation':
+                        self.bw_geom_rot = bw
+                elif isinstance(bw, BatchwiseMat):
+                    self.bw_mat = bw
+                else:
                     raise ValueError(f'{bw} is not a valid instance of'
-                                      ' BatchwiseGeom class')
-
-            self.bw_geom_trans = [bw for bw in bw_geom if bw.type = 'translation'][0]
-            self.bw_geom_rot = [bw for bw in bw_geom if bw.type = 'rotation'][0]
-
+                                      ' Batchwise class')
         else:
-            raise ValueError(f'{bw_geom} is not a valid instance of list')
-
-        if not isinstance(bw_mat, BatchwiseMat):
-            raise ValueError(f'{bw_mat} is not a valid instance of'
-                              ' BatchwiseMat class')
-        else:
-            self.bw_mat = bw_mat
+            raise ValueError(f'{bw_list} is not a list')
 
         #check_value("nuclide exists", nuclide, self.bw_geom.operator.nuclides_with_data)
         self.nuclide = nuclide
         self.limit = limit
-
-        self.flex_sections = 1
+        self.span = span
+        self.flex_fraction = flex_fraction
+        # start roation counter at 1
+        self.rotation = 1
 
     def _update_volumes_after_depletion(self, x):
         """
@@ -1688,13 +1677,22 @@ class BatchwiseWrapFlex():
             Updated total atoms concentrations
         """
 
-        nuc_density = _nuclide_density('flex-fuel', self.nuclide)
-        print('{} denisty: {:.2f} [atoms/b-cm]'.format(self.nuclide, nuc_density))
-        if nuc_density <= self.limit:
-            # each time make a rotation
-            self.bw_geom_rot._set_cell_attrib(45/8)
-            # For every rotation, the volume and the materials must be updated
-            x = self.bw_mat._update_materials(x, self.bw_geom_rot.cell_id)
+        nuc_density = _nuclide_density('flex', self.nuclide)
+        print('{} density: {:.7f} [atoms/b-cm]'.format(self.nuclide, nuc_density))
+        if nuc_density >= self.limit:
+            if self.rotation < 1/self.flex_fraction:
+                print(f'Flex rotation nr: {self.rotation}')
+                # each time make a rotation anti-clockwise, i.e increase the volume of flex
+                self.bw_geom_rot._set_cell_attrib(self.span * self.flex_fraction * self.rotation)
+                # For every rotation, the volume and the materials must be updated
+                x = self.bw_mat._update_materials(x, self.bw_geom_rot.cell_id)
+                self.rotation += 1
+            else:
+                print('All flex sections converted into fuel'
+                      ' exit..')
+                Path('sim.done').touch()
+                for rank in range(comm.size):
+                    comm.Abort()
 
         x = self.bw_geom_trans.msr_search_for_keff(x, step_index)
         # in this case if upper limit gets hit, stop directly
