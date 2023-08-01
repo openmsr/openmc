@@ -25,8 +25,8 @@ from .chain import Chain
 from .results import Results
 from .pool import deplete
 from .transfer_rates import TransferRates
-from .batchwise import (BatchwiseGeomTrans, BatchwiseMatDilute,
-            BatchwiseMatRefuel, BatchwiseWrap1, BatchwiseWrap2)
+from .batchwise import (BatchwiseGeomTrans, BatchwiseMatDilute, BatchwiseMatAdd,
+            BatchwiseMatRefuel, BatchwiseWrap1, BatchwiseWrap2, BatchwiseWrapFlex)
 
 __all__ = [
     "OperatorResult", "TransportOperator",
@@ -905,28 +905,23 @@ class Integrator(ABC):
             keyword arguments that are passed to the batchwise class.
 
         """
-
         if self.batchwise is None:
-            if type == 'trans':
-                self.batchwise = BatchwiseGeomTrans(self.operator,
-                                                self.operator.model, **kwargs)
-            elif type == 'refuel':
-                self.batchwise = BatchwiseMatRefuel(self.operator,
-                                                self.operator.model, **kwargs)
-            elif type == 'dilute':
-                self.batchwise = BatchwiseGeomDilute(self.operator,
-                                                self.operator.model, **kwargs)
+            self.batchwise = []
+
+        if type in ['translation', 'rotation']:
+            self.batchwise.append(BatchwiseGeomTrans(type, self.operator,
+                                            self.operator.model, **kwargs))
+        elif type == 'refuel':
+            self.batchwise.append(BatchwiseMatRefuel(self.operator,
+                                            self.operator.model, **kwargs))
+        elif type == 'dilute':
+            self.batchwise.append(BatchwiseMatDilute(self.operator,
+                                            self.operator.model, **kwargs))
+        elif type == 'add':
+            self.batchwise.append(BatchwiseMatAdd(self.operator,
+                                            self.operator.model, **kwargs))
         else:
-            self.batchwise = [self.batchwise]
-            if type == 'trans':
-                self.batchwise.append(BatchwiseGeomTrans(self.operator,
-                                                self.operator.model, **kwargs))
-            elif type == 'refuel':
-                self.batchwise.append(BatchwiseMatRefuel(self.operator,
-                                                self.operator.model, **kwargs))
-            elif type == 'dilute':
-                self.batchwise.append(BatchwiseMatDilute(self.operator,
-                                                self.operator.model, **kwargs))
+            raise ValueError (f'{type}: is not a supported Batchwise type')
 
     def add_batchwise_wrap(self, type, **kwargs):
         """Add batchwise wrapper to integrator scheme, after calls to
@@ -938,24 +933,15 @@ class Integrator(ABC):
             Type of wrapper function. So far only '1' or '2'.
         **kwargs
             keyword arguments that are passed to the batchwise wrapper class.
-            
-        """
-        if self.batchwise.__class__ is not list:
-            self.batchwise = [self.batchwise]
 
-        args = dict()
-        for arg, class_name in enumerate(['BatchwiseGeom', 'BatchwiseMat']):
-            obj = [i for i in self.batchwise \
-                   if i.__class__.__base__.__name__ == class_name]
-            if obj:
-                args[arg] = obj[0]
-            else:
-                args[arg] = None
+        """
 
         if type == '1':
-            self.batchwise = BatchwiseWrap1(*args.values())
+            self.batchwise = BatchwiseWrap1(self.batchwise)
         elif type == '2':
-            self.batchwise = BatchwiseWrap2(*args.values(), **kwargs)
+            self.batchwise = BatchwiseWrap2(self.batchwise, **kwargs)
+        elif type == 'flex':
+            self.batchwise = BatchwiseWrapFlex(self.batchwise, **kwargs)
 
 @add_params
 class SIIntegrator(Integrator):
