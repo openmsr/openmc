@@ -1312,7 +1312,7 @@ class BatchwiseMatAdd(BatchwiseMat):
         mat_idx = self.local_mats.index(str(mat_id))
         for nuc in number_i.burnable_nuclides:
             nuc_idx = number_i.burnable_nuclides.index(nuc)
-            # convert [#atoms/b-cm] into [#atoms]
+            # update number of atoms in new volume
             x[mat_idx][nuc_idx] *= vol / number_i.volume[mat_idx]
         return x
 
@@ -1332,71 +1332,88 @@ class BatchwiseMatAdd(BatchwiseMat):
 
     def _update_materials(self, x, cell_id):
         """
-        Materials update after a geometrical change
+        Materials update after a geometrical change.
+        Updates x composition vector, material densities and material volumes
         """
         # firstly, calculate the new volumes
         res = self._calc_volumes()
+        # Gather all AtomNumbers and x in rank 0
+        number = comm.gather(self.operator.number)
+        x = comm.gather(x)
 
-        print(res.volumes)
-        number_i = self.operator.number
+        # Perform all on rank 0
+        if comm.rank == 0:
+            for mat_name in self._find_cell_materials(cell_id):
+                print(mat_name)
+                mat_id = super()._get_mat_id(mat_name)
+                # get index of AtomNumber with mat_id
+                n_i = [i for i,n in enumerate(number) if str(mat_id) in n][0]
+                mat_index = number[n_i].index_mat[str(mat_id)]
+                vol_new = res.volumes[int(mat_id)].n
+                vol_diff = vol_new - number[n_i].volume[mat_index]
 
-        for mat_name in self._find_cell_materials(cell_id):
-            print(mat_name)
-            mat_id = super()._get_mat_id(mat_name)
-            mat_index = number_i.index_mat[str(mat_id)]
+                # add to material in mats_id
+                if mat_id in self.mats_id:
+                    #atoms density [#atoms/cm3]
+                    atom_dens = {nuc: self.density / \
+                             atomic_mass(nuc) * AVOGADRO * frac \
+                             for nuc, frac in self.mat_vector.items()}
+                    # If out of core, add difference betweeen volume_to_add and
+                    # volume difference in core, to out-of-core material
+                    if self._find_ofc_material_id(mat_name):
+                        # atoms in-core [#atoms] to add
+                        atoms = {nuc: i*vol_diff for nuc,i in atom_dens.items()}
+                        x = self._update_densities(x, mat_id, atoms, vol_new)
+                        number[n_i].volume[mat_index] = vol_new
+                        #update out of core densities using the remaining volume
+                        # to self.volume_to_add
+                        mat_ofc_id = self._find_ofc_material_id(mat_name)[0]
+                        # mat_ofc_id might not be in the same AtomNumber chunk
+                        # as mat_id
+                        n_i = [i for i,n in enumerate(number) if str(mat_ofc_id) in n][0]
+                        mat_ofc_index = number[n_i].index_mat[str(mat_ofc_id)]
+                        vol_ofc_new = number[n_i].volume[mat_ofc_index] + (self.volume_to_add-vol_diff)
+                        atoms = {nuc: i*(self.volume_to_add-vol_diff) for nuc,i in atom_dens.items()}
+                        x = self._update_densities(x, mat_ofc_id, atoms, vol_ofc_new)
+                        number[n_i].volume[mat_ofc_index] = vol_ofc_new
+                    else:
+                        #simply add all volume in core
+                        vol_new = number_i.volume[mat_index] + self.volume_to_add
+                        atoms = {nuc: i*self.volume_to_add for nuc,i in atom_dens.items()}
+                        x = self._update_densities(x, mat_id, atoms, vol_new)
+                        number[n_i].volume[mat_index] = vol_new
 
-            vol_new = res.volumes[int(mat_id)].n
-            vol_diff = vol_new - number_i.volume[mat_index]
-
-            # add external volume
-            if mat_id in self.mats_id:
-                #atoms density
-                atom_dens = {nuc: self.density / \
-                         atomic_mass(nuc) * AVOGADRO * frac \
-                         for nuc, frac in self.mat_vector.items()}
-
-                if self._find_ofc_material_id(mat_name):
-                    mat_ofc_id = self._find_ofc_material_id(mat_name)[0]
-                    mat_ofc_index = number_i.index_mat[str(mat_ofc_id)]
-                    #update in core densities
-                    atoms = {nuc: i*vol_diff for nuc,i in atom_dens.items()}
-                    x = self._update_densities(x, mat_id, atoms, vol_new)
-                    number_i.volume[mat_index] = vol_new
-                    #update out of core densities taking the rest of the volume
-                    vol_ofc_new = number_i.volume[mat_ofc_index] + (self.volume_to_add-vol_diff)
-                    atoms = {nuc: i*(self.volume_to_add-vol_diff) for nuc,i in atom_dens.items()}
-                    x = self._update_densities(x, mat_ofc_id, atoms, vol_ofc_new)
-                    number_i.volume[mat_ofc_index] = vol_ofc_new
+                # Keep total volume constant
                 else:
-                    #simply add all volume in core
-                    vol_new = number_i.volume[mat_index] + self.volume_to_add
-                    atoms = {nuc: i*self.volume_to_add for nuc,i in atom_dens.items()}
-                    x = self._update_densities(x, mat_id, atoms, vol_new)
-                    number_i.volume[mat_index] = vol_new
+                    # If ofc material, move in-core volume difference to out
+                    # of core material
+                    if self._find_ofc_material_id(mat_name):
+                        # Note that densities do not need to be updated as we
+                        # are assuming homegeneity bewtween in core and out core
+                        # only need to redistribute number of atoms between in core
+                        # and out core.
+                        # Update x in-core and new volume
+                        x = self._dilute_x(x, mat_id, vol_new)
+                        number[n_i].volume[mat_index] = vol_new
+                        # Update x out-core. Note: If vol_diff is negative will
+                        # be added, while if positive will be removed
+                        mat_ofc_id = self._find_ofc_material_id(mat_name)[0]
+                        # mat_ofc_id might not be in the same AtomNumber chunk as
+                        # mat_id
+                        n_i = [i for i,n in enumerate(number) if str(mat_ofc_id) in n][0]
+                        mat_ofc_index = number[n_i].index_mat[str(mat_ofc_id)]
+                        vol_ofc_new = number[n_i].volume[mat_ofc_index] - vol_diff
+                        x = self._dilute_x(x, mat_ofc_id, vol_ofc_new)
+                        number[n_i].volume[mat_ofc_index] = vol_ofc_new
+                    else:
+                        #in this case we don't need to do anything as we have only
+                        #one material for in-core and out-core. The total
+                        # volume is automatically conserved.
+                        continue
 
-            else:
-                # in both cases conserve total volume.
-                if self._find_ofc_material_id(mat_name):
-                    # move atoms from in-core to out-core
-                    mat_ofc_id = self._find_ofc_material_id(mat_name)[0]
-                    mat_ofc_index = number_i.index_mat[str(mat_ofc_id)]
-                    # Note that densities do not need to be updated as we
-                    # are assuming homegeneity bewtween in core and out core
-                    # only need to redistribute number of atoms between in core
-                    # and out core.
-                    # Update x in-core
-                    x = self._dilute_x(x, mat_id, vol_new)
-                    # Update x out-core. Nothe: If vol_diff is negative will
-                    # be added, while if positive will be removed
-                    vol_ofc_new = number_i.volume[mat_ofc_index] - vol_diff
-                    x = self._dilute_x(x, mat_ofc_id, vol_ofc_new)
-                    number_i.volume[mat_index] = vol_new
-                    number_i.volume[mat_ofc_index] = vol_ofc_new
-                else:
-                    #in this case we don't need to do anything as we have only
-                    #one material for in-core and out-core. The total
-                    # volume is automatically conserved.
-                    continue
+        x = comm.bcast(x, root=0)
+        x = pool._distribute(x)
+        self.operator.number = number[comm.rank]
 
         return x
 
