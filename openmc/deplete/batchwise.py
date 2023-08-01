@@ -1584,7 +1584,7 @@ class BatchwiseWrap2():
             #update dulution interval
             #if step_index == self.dilute_interval:
             #    self.dilute_interval += self.step_interval
-                
+
 
         else:
             x = self.bw_geom.msr_search_for_keff(x, step_index)
@@ -1685,7 +1685,7 @@ class BatchwiseWrapFlex():
 
         nuc_density = _nuclide_density('flex', self.nuclide)
         print('{} density: {:.7f} [atoms/b-cm]'.format(self.nuclide, nuc_density))
-        if nuc_density <= self.limit:
+        if nuc_density >= self.limit:
             if self.rotation < 1/self.flex_fraction:
                 print(f'Flex rotation nr: {self.rotation}')
                 # each time make a rotation anti-clockwise, i.e increase the volume of flex
