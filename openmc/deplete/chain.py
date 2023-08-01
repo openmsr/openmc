@@ -725,14 +725,15 @@ class Chain:
             if isinstance(materials, str):
                 material = materials
                 if element in transfer_rates.get_elements(material):
-                    matrix[i, i] = transfer_rates.get_transfer_rate(material, element)
+                    matrix[i, i] = sum(transfer_rates.get_transfer_rate(material, element))
                 else:
                     matrix[i, i] = 0.0
             #Build transfer terms matrices
             elif isinstance(materials, tuple):
                 destination_material, material = materials
-                if transfer_rates.get_destination_material(material, element) == destination_material:
-                    matrix[i, i] = transfer_rates.get_transfer_rate(material, element)
+                if destination_material in transfer_rates.get_destination_material(material, element):
+                    dest_mat_index = transfer_rates.get_destination_material(material, element).index(destination_material)
+                    matrix[i, i] = transfer_rates.get_transfer_rate(material, element)[dest_mat_index]
                 else:
                     matrix[i, i] = 0.0
             #Nothing else is allowed

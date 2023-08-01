@@ -1301,6 +1301,7 @@ class BatchwiseWrap2():
             self.dilute_interval = dilute_interval
         self.interrupt = interrupt
 
+
     def _update_volumes_after_depletion(self, x):
         """
         Parameters
@@ -1325,13 +1326,14 @@ class BatchwiseWrap2():
             Updated total atoms concentrations
         """
         #Check if index lies in dilution timesteps
-        if step_index in [self.first_dilute, self.dilute_interval] and self.bw_geom._get_cell_attrib() <= self.bw_mat.restart_level:
+        if step_index in np.arange(self.dilute_interval,1000,self.dilute_interval) and self.bw_geom._get_cell_attrib() <= self.bw_mat.restart_level:
             # restart level and perform dilution
             self.bw_geom._set_cell_attrib(self.bw_mat.restart_level)
             x = self.bw_mat.msr_search_for_keff(x, step_index)
             #update dulution interval
-            if step_index == self.dilute_interval:
-                self.dilute_interval += self.step_interval
+            #if step_index == self.dilute_interval:
+            #    self.dilute_interval += self.step_interval
+                
 
         else:
             x = self.bw_geom.msr_search_for_keff(x, step_index)

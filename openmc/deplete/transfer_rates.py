@@ -95,7 +95,7 @@ class TransferRates:
         """
         material_id = self._get_material_id(material)
         check_value('element', element, ELEMENT_SYMBOL.values())
-        return self.transfer_rates[material_id][element][0]
+        return [i[0] for i in self.transfer_rates[material_id][element]]
 
     def get_destination_material(self, material, element):
         """Return destination (or transfer) material for given material and
@@ -117,7 +117,9 @@ class TransferRates:
         material_id = self._get_material_id(material)
         check_value('element', element, ELEMENT_SYMBOL.values())
         if element in self.transfer_rates[material_id]:
-            return self.transfer_rates[material_id][element][1]
+            return [i[1] for i in self.transfer_rates[material_id][element]]
+        else:
+            return []
 
     def get_elements(self, material):
         """Extract removing elements for a given material
@@ -186,6 +188,11 @@ class TransferRates:
 
         for element in elements:
             check_value('element', element, ELEMENT_SYMBOL.values())
-            self.transfer_rates[material_id][element] = transfer_rate / unit_conv, destination_material_id
+            if element in self.transfer_rates[material_id]:
+                self.transfer_rates[material_id][element].append( \
+                    (transfer_rate / unit_conv, destination_material_id))
+            else:
+                self.transfer_rates[material_id][element] = \
+                    [(transfer_rate / unit_conv, destination_material_id)]
             if destination_material_id is not None:
                 self.index_transfer.add((destination_material_id, material_id))
