@@ -1279,10 +1279,9 @@ class BatchwiseMatAdd(BatchwiseMat):
                         if nuc in atoms:
                             # add atoms
                             val += atoms[nuc]
-                        # obtain density [atoms/b-cm], dividing by new volume
-                        if val > 0.0:
-                            # divide by new volume to obtain density
-                            val *= 1.0e-24 / vol
+                        # divide by new volume to obtain density
+                        val *= 1.0e-24 / vol
+                        if val > self.atom_density_limit:
                             nuclides.append(nuc)
                             densities.append(val)
                 openmc.lib.materials[mat_id].set_densities(nuclides, densities)
@@ -1685,7 +1684,8 @@ class BatchwiseWrapFlex():
 
         nuc_density = _nuclide_density('flex', self.nuclide)
         print('{} density: {:.7f} [atoms/b-cm]'.format(self.nuclide, nuc_density))
-        if nuc_density >= self.limit:
+        #If water level too close to the upper border don't apply rotation
+        if nuc_density >= self.limit and self.bw_geom_trans._get_cell_attrib() < self.bw_geom_trans.bracket_limit[1] - 15:
             if self.rotation < 1/self.flex_fraction:
                 print(f'Flex rotation nr: {self.rotation}')
                 # each time make a rotation anti-clockwise, i.e increase the volume of flex
