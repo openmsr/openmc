@@ -1658,6 +1658,11 @@ class BatchwiseWrapFlex():
         # start roation counter at 1
         self.rotation = 1
 
+        #container for water level
+        self.levels = []
+        #Linear fit water level 1st coeff (line slope, or 1st derivative )
+        self.a = 0
+
     def _update_volumes_after_depletion(self, x):
         """
         Parameters
@@ -1684,8 +1689,16 @@ class BatchwiseWrapFlex():
 
         nuc_density = _nuclide_density('flex', self.nuclide)
         print('{} density: {:.7f} [atoms/b-cm]'.format(self.nuclide, nuc_density))
-        #If water level too close to the upper border don't apply rotation
-        if nuc_density >= self.limit and self.bw_geom_trans._get_cell_attrib() < self.bw_geom_trans.bracket_limit[1] - 15:
+
+        #Compute liner fit of water level variation (needs at least 3 points)
+        if len(self.levels) >= 3:
+            self.a = np.polyfit(np.arange(0,len(self.levels),1), np.array(self.levels), 1)[0]
+
+        #If water level too close to the upper border don't apply rotation (just temporary ) or
+        # water level first derivative is negative:
+        if (nuc_density >= self.limit and self.bw_geom_trans._get_cell_attrib() < self.bw_geom_trans.bracket_limit[1] - 15) or \
+            self.a < 0:
+
             if self.rotation < 1/self.flex_fraction:
                 print(f'Flex rotation nr: {self.rotation}')
                 # each time make a rotation anti-clockwise, i.e increase the volume of flex
@@ -1693,6 +1706,9 @@ class BatchwiseWrapFlex():
                 # For every rotation, the volume and the materials must be updated
                 x = self.bw_mat._update_materials(x, self.bw_geom_rot.cell_id)
                 self.rotation += 1
+                # reset water level container
+                self.levels = []
+                self.a = 0
             else:
                 print('All flex sections converted into fuel'
                       ' exit..')
