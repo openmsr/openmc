@@ -1717,6 +1717,8 @@ class BatchwiseWrapFlex():
                     comm.Abort()
 
         x = self.bw_geom_trans.msr_search_for_keff(x, step_index)
+        # update water level container after geom keff search
+        self.levels.append(self.bw_geom_trans._get_cell_attrib())
         # in this case if upper limit gets hit, stop directly
         if self.bw_geom_trans._get_cell_attrib() >= self.bw_geom_trans.bracket_limit[1]:
             from pathlib import Path
