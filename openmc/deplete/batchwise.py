@@ -601,13 +601,13 @@ class BatchwiseGeomTrans(BatchwiseGeom):
     vector : numpy.array
         translation vector
     """
-    def __init__(self, type, operator, model, cell_id_or_name, axis, bracket,
+    def __init__(self, attrib_name, operator, model, cell_id_or_name, axis, bracket,
                  bracket_limit, bracketed_method='brentq', tol=0.01, target=1.0,
                  print_iterations=True, search_for_keff_output=True,
                  atom_density_limit=0.0, interrupt=False):
 
-        check_value('type', type, ['translation','rotation'])
-        self.attrib_name = type
+        check_value('attrib_name', attrib_name, ['translation','rotation'])
+        self.attrib_name = attrib_name
 
         super().__init__(operator, model, cell_id_or_name, bracket, bracket_limit,
                          bracketed_method, tol, target, print_iterations,
@@ -888,7 +888,7 @@ class BatchwiseMatRefuel(BatchwiseMat):
         the nuclides str and values are the composition fractions.
     """
 
-    def __init__(self, operator, model, mats_id_or_name, mat_vector, bracket,
+    def __init__(self, attrib_name, operator, model, mats_id_or_name, mat_vector, bracket,
                  bracket_limit, bracketed_method='brentq', tol=0.01, target=1.0,
                  print_iterations=True, search_for_keff_output=True,
                  atom_density_limit=0.0, restart_level=0.0, interrupt=False):
@@ -897,6 +897,9 @@ class BatchwiseMatRefuel(BatchwiseMat):
                          bracketed_method, tol, target, print_iterations,
                          search_for_keff_output, atom_density_limit,
                          restart_level, interrupt)
+
+        check_value('attrib_name', attrib_name, 'refuel')
+        self.attrib_name = attrib_name
 
     def _model_builder(self, param):
         """
@@ -1074,7 +1077,7 @@ class BatchwiseMatDilute(BatchwiseMat):
         the nuclides str and values are the composition fractions.
 
     """
-    def __init__(self, operator, model, mats_id_or_name, mat_vector, bracket,
+    def __init__(self, attrib_name, operator, model, mats_id_or_name, mat_vector, bracket,
                  bracket_limit, bracketed_method='brentq', tol=0.01, target=1.0,
                  print_iterations=True, search_for_keff_output=True,
                  atom_density_limit=0.0, restart_level=0.0, interrupt=False):
@@ -1083,6 +1086,9 @@ class BatchwiseMatDilute(BatchwiseMat):
                          bracket_limit, bracketed_method, tol, target, print_iterations,
                          search_for_keff_output, atom_density_limit,
                          restart_level, interrupt)
+
+        check_value('attrib_name', attrib_name, 'dilute')
+        self.attrib_name = attrib_name
 
     def _model_builder(self, param):
         """
@@ -1235,7 +1241,7 @@ class BatchwiseMatAdd(BatchwiseMat):
         the nuclides str and values are the composition fractions.
 
     """
-    def __init__(self, operator, model, mats_id_or_name, mat_vector, bracket,
+    def __init__(self, attrib_name, operator, model, mats_id_or_name, mat_vector, bracket,
                  bracket_limit, density, volume, bracketed_method='brentq', tol=0.01, target=1.0,
                  print_iterations=True, search_for_keff_output=True,
                  atom_density_limit=0.0, restart_level=0.0, interrupt=False):
@@ -1246,6 +1252,9 @@ class BatchwiseMatAdd(BatchwiseMat):
                          restart_level, interrupt)
         self.density = density
         self.volume_to_add = volume
+
+        check_value('attrib_name', attrib_name, 'add')
+        self.attrib_name = attrib_name
 
     def _model_builder(self, param):
         """
@@ -1633,7 +1642,7 @@ class BatchwiseWrapFlex():
         Default to None
     """
 
-    def __init__(self, bw_list, nuclide, limit, flex_fraction, span):
+    def __init__(self, bw_list, nuclide, limit, flex_fraction, span, dilute_interval=None):
 
         if isinstance(bw_list, list):
             for bw in bw_list:
@@ -1643,7 +1652,10 @@ class BatchwiseWrapFlex():
                     elif bw.attrib_name == 'rotation':
                         self.bw_geom_rot = bw
                 elif isinstance(bw, BatchwiseMat):
-                    self.bw_mat = bw
+                    if bw.attrib_name == 'add':
+                        self.bw_mat_add = bw
+                    elif bw.attrib_name == 'dilute':
+                        self.bw_mat_dil = bw
                 else:
                     raise ValueError(f'{bw} is not a valid instance of'
                                       ' Batchwise class')
@@ -1663,6 +1675,10 @@ class BatchwiseWrapFlex():
         #Linear fit water level 1st coeff (line slope, or 1st derivative )
         self.a = 0
 
+        # Dilution interval after all sections are converted
+        self.dilute_interval = dilute_interval
+        #
+        self.converged_flex = False
     def _update_volumes_after_depletion(self, x):
         """
         Parameters
@@ -1690,8 +1706,8 @@ class BatchwiseWrapFlex():
         nuc_density = _nuclide_density('flex', self.nuclide)
         print('{} density: {:.7f} [atoms/b-cm]'.format(self.nuclide, nuc_density))
 
-        #Compute liner fit of water level variation (needs at least 3 points)
-        if len(self.levels) >= 3:
+        #Compute liner fit of water level variation (needs at least 20 points)
+        if len(self.levels) >= 8:
             self.a = np.polyfit(np.arange(0,len(self.levels),1), np.array(self.levels), 1)[0]
 
         #If water level too close to the upper border don't apply rotation (just temporary ) or
@@ -1701,20 +1717,42 @@ class BatchwiseWrapFlex():
 
             if self.rotation < 1/self.flex_fraction:
                 print(f'Flex rotation nr: {self.rotation}')
+                print(f'Slope coeff: {self.a}')
                 # each time make a rotation anti-clockwise, i.e increase the volume of flex
                 self.bw_geom_rot._set_cell_attrib(self.span * self.flex_fraction * self.rotation)
                 # For every rotation, the volume and the materials must be updated
-                x = self.bw_mat._update_materials(x, self.bw_geom_rot.cell_id)
+                x = self.bw_mat_add._update_materials(x, self.bw_geom_rot.cell_id)
                 self.rotation += 1
                 # reset water level container
                 self.levels = []
                 self.a = 0
+                if self.rotation == 1/self.flex_fraction:
+                    print('All flex sections converted')
+                    # set start dilution time step index from next one
+                    self.start_dilute_index = step_index + 1
+                    self.converged_flex = True
             else:
-                print('All flex sections converted into fuel'
-                      ' exit..')
-                Path('sim.done').touch()
-                for rank in range(comm.size):
-                    comm.Abort()
+                if self.dilute_interval is not None:
+                    if step_index in np.arange(self.start_dilute_index,1000,self.dilute_interval) and self.bw_geom_trans._get_cell_attrib() <= self.bw_mat_dil.restart_level:
+                        # restart level and perform dilution
+                        self.bw_geom_trans._set_cell_attrib(self.bw_mat_dil.restart_level)
+                        x = self.bw_mat_dil.msr_search_for_keff(x, step_index)
+                    else:
+                        x = self.bw_geom_trans.msr_search_for_keff(x, step_index)
+                        # in this case if upper limit gets hit, stop directly
+                        if self.bw_geom_trans._get_cell_attrib() >= self.bw_geom_trans.bracket_limit[1]:
+                            from pathlib import Path
+                            print(f'Reached maximum of {self.bw_geom_trans.bracket_limit[1]} cm'
+                                   ' exit..')
+                            Path('sim.done').touch()
+                            for rank in range(comm.size):
+                                comm.Abort()
+                else:
+                    print('Stop simulation')
+                    from pathlib import Path
+                    Path('sim.done').touch()
+                    for rank in range(comm.size):
+                        comm.Abort()
 
         x = self.bw_geom_trans.msr_search_for_keff(x, step_index)
         # update water level container after geom keff search

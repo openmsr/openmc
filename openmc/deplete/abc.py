@@ -814,6 +814,10 @@ class Integrator(ABC):
             t, self._i_res = self._get_start_data()
 
             for i, (dt, source_rate) in enumerate(self):
+                if self.batchwise.converged_flex:
+                    # Double time step and reduce list of timestep by 1 every time
+                    dt *= 2
+                    self.timesteps = self.timesteps[:-1]
                 if output and comm.rank == 0:
                     print(f"[openmc.deplete] t={t} s, dt={dt} s, source={source_rate}")
 
@@ -892,13 +896,13 @@ class Integrator(ABC):
         self.transfer_rates.set_transfer_rate(material, elements, transfer_rate,
                                       transfer_rate_units, destination_material)
 
-    def add_batchwise(self, type, **kwargs):
+    def add_batchwise(self, attrib_name, **kwargs):
         """Add batchwise operation to integrator scheme.
 
         Parameters
         ----------
-        type : str
-            Type of batchwise operation to add. `Trans` stands for geometrical
+        attrib_name : str
+            attrib_name of batchwise operation to add. `Trans` stands for geometrical
             translation, `refuel` for material refueling and `dilute` for material
             dilute.
         **kwargs
@@ -908,39 +912,39 @@ class Integrator(ABC):
         if self.batchwise is None:
             self.batchwise = []
 
-        if type in ['translation', 'rotation']:
-            self.batchwise.append(BatchwiseGeomTrans(type, self.operator,
+        if attrib_name in ['translation', 'rotation']:
+            self.batchwise.append(BatchwiseGeomTrans(attrib_name, self.operator,
                                             self.operator.model, **kwargs))
-        elif type == 'refuel':
-            self.batchwise.append(BatchwiseMatRefuel(self.operator,
+        elif attrib_name == 'refuel':
+            self.batchwise.append(BatchwiseMatRefuel(attrib_name, self.operator,
                                             self.operator.model, **kwargs))
-        elif type == 'dilute':
-            self.batchwise.append(BatchwiseMatDilute(self.operator,
+        elif attrib_name == 'dilute':
+            self.batchwise.append(BatchwiseMatDilute(attrib_name, self.operator,
                                             self.operator.model, **kwargs))
-        elif type == 'add':
-            self.batchwise.append(BatchwiseMatAdd(self.operator,
+        elif attrib_name == 'add':
+            self.batchwise.append(BatchwiseMatAdd(attrib_name, self.operator,
                                             self.operator.model, **kwargs))
         else:
-            raise ValueError (f'{type}: is not a supported Batchwise type')
+            raise ValueError (f'{attrib_name}: is not a supported Batchwise attribute')
 
-    def add_batchwise_wrap(self, type, **kwargs):
+    def add_batchwise_wrap(self, wrap_name, **kwargs):
         """Add batchwise wrapper to integrator scheme, after calls to
         meth:`add_batchwise`.
 
         Parameters
         ----------
-        type : str
-            Type of wrapper function. So far only '1' or '2'.
+        wrap_name : str
+            wrap_name of wrapper function. So far only '1' or '2'.
         **kwargs
             keyword arguments that are passed to the batchwise wrapper class.
 
         """
 
-        if type == '1':
+        if wrap_name == '1':
             self.batchwise = BatchwiseWrap1(self.batchwise)
-        elif type == '2':
+        elif wrap_name == '2':
             self.batchwise = BatchwiseWrap2(self.batchwise, **kwargs)
-        elif type == 'flex':
+        elif wrap_name == 'flex':
             self.batchwise = BatchwiseWrapFlex(self.batchwise, **kwargs)
 
 @add_params
