@@ -319,6 +319,8 @@ class Settings:
 
         self._create_fission_neutrons = None
         self._create_delayed_neutrons = None
+        self._create_delayed_neutrons_static = None
+        self._weight_delayed_neutrons = None
         self._delayed_photon_scaling = None
         self._material_cell_offsets = None
         self._log_grid_bins = None
@@ -872,6 +874,26 @@ class Settings:
         self._create_delayed_neutrons = create_delayed_neutrons
 
     @property
+    def create_delayed_neutrons_static(self) -> bool:
+        return self._create_delayed_neutrons_static
+
+    @create_delayed_neutrons_static.setter
+    def create_delayed_neutrons_static(self, create_delayed_neutrons_static: bool):
+        cv.check_type('Whether create only prompt neutrons',
+                      create_delayed_neutrons_static, bool)
+        self._create_delayed_neutrons_static = create_delayed_neutrons_static
+
+    @property
+    def weight_delayed_neutrons(self) -> float:
+        return self._weight_delayed_neutrons
+
+    @weight_delayed_neutrons.setter
+    def weight_delayed_neutrons(self, weight_delayed_neutrons: float):
+        cv.check_type('Whether create only prompt neutrons',
+                      weight_delayed_neutrons, float)
+        self._weight_delayed_neutrons = weight_delayed_neutrons
+
+    @property
     def delayed_photon_scaling(self) -> bool:
         return self._delayed_photon_scaling
 
@@ -1281,9 +1303,19 @@ class Settings:
             elem.text = str(self._create_fission_neutrons).lower()
 
     def _create_create_delayed_neutrons_subelement(self, root):
-       if self._create_delayed_neutrons is not None:
-           elem = ET.SubElement(root, "create_delayed_neutrons")
-           elem.text = str(self._create_delayed_neutrons).lower()
+        if self._create_delayed_neutrons is not None:
+            elem = ET.SubElement(root, "create_delayed_neutrons")
+            elem.text = str(self._create_delayed_neutrons).lower()
+
+    def _create_create_delayed_neutrons_static_subelement(self, root):
+        if self._create_delayed_neutrons_static is not None:
+            elem = ET.SubElement(root, "create_delayed_neutrons_static")
+            elem.text = str(self._create_delayed_neutrons_static).lower()
+
+    def _create_weight_delayed_neutrons_subelement(self, root):
+        if self._weight_delayed_neutrons is not None:
+            elem = ET.SubElement(root, "weight_delayed_neutrons")
+            elem.text = str(self._weight_delayed_neutrons).lower()
 
     def _create_delayed_photon_scaling_subelement(self, root):
         if self._delayed_photon_scaling is not None:
@@ -1645,6 +1677,16 @@ class Settings:
         if text is not None:
             self.create_delayed_neutrons = text in ('true', '1')
 
+    def _create_delayed_neutrons_static_from_xml_element(self, root):
+        text = get_text(root, 'create_delayed_neutrons_static')
+        if text is not None:
+            self.create_delayed_neutrons_static = text in ('true', '1')
+
+    def _weight_delayed_neutrons_from_xml_element(self, root):
+        text = get_text(root, 'weight_delayed_neutrons')
+        if text is not None:
+            self.weight_delayed_neutrons = float(text)
+
     def _delayed_photon_scaling_from_xml_element(self, root):
         text = get_text(root, 'delayed_photon_scaling')
         if text is not None:
@@ -1750,6 +1792,8 @@ class Settings:
         self._create_volume_calcs_subelement(element)
         self._create_create_fission_neutrons_subelement(element)
         self._create_create_delayed_neutrons_subelement(element)
+        self._create_create_delayed_neutrons_static_subelement(element)
+        self._create_weight_delayed_neutrons_subelement(element)
         self._create_delayed_photon_scaling_subelement(element)
         self._create_event_based_subelement(element)
         self._create_max_particles_in_flight_subelement(element)

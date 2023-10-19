@@ -29,6 +29,7 @@ extern bool confidence_intervals; //!< use confidence intervals for results?
 extern bool
   create_fission_neutrons; //!< create fission neutrons (fixed source)?
 extern bool create_delayed_neutrons; //!< create delayed fission neutrons?
+extern bool create_delayed_neutrons_static; //!< create delayed fission neutrons?
 extern "C" bool cmfd_run;            //!< is a CMFD run?
 extern bool
   delayed_photon_scaling;   //!< Scale fission photon yield to include delayed
@@ -132,6 +133,7 @@ extern int trigger_batch_interval; //!< Batch interval for triggers
 extern "C" int verbosity;          //!< How verbose to make output
 extern double weight_cutoff;       //!< Weight cutoff for Russian roulette
 extern double weight_survive;      //!< Survival weight after Russian roulette
+extern double weight_delayed_neutrons;      //!< Survival weight after Russian roulette
 } // namespace settings
 
 //==============================================================================

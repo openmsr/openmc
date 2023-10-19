@@ -49,6 +49,7 @@ struct SourceSite {
   double E;
   double time {0.0};
   double wgt {1.0};
+  double delayed_weight {1.0};
   int delayed_group {0};
   int surf_id {0};
   ParticleType particle;
@@ -63,6 +64,7 @@ struct TrackState {
   double E;             //!< Energy in [eV]
   double time {0.0};    //!< Time in [s]
   double wgt {1.0};     //!< Weight
+  double delayed_weight {1.0};
   int cell_id;          //!< Cell ID
   int cell_instance;    //!< Cell instance
   int material_id {-1}; //!< Material ID (default value indicates void)
@@ -78,6 +80,7 @@ struct TrackStateHistory {
 struct NuBank {
   double E;          //!< particle energy
   double wgt;        //!< particle weight
+  double delayed_weight;
   int delayed_group; //!< particle delayed group
 };
 
@@ -264,6 +267,7 @@ private:
 
   // Other physical data
   double wgt_ {1.0};       //!< particle weight
+  double delayed_weight_ {1.0};       //!< particle weight
   double mu_;              //!< angle of scatter
   double time_ {0.0};      //!< time in [s]
   double time_last_ {0.0}; //!< previous time in [s]
@@ -397,6 +401,8 @@ public:
 
   double& wgt() { return wgt_; }
   double wgt() const { return wgt_; }
+  double& delayed_weight() { return delayed_weight_; }
+  double delayed_weight() const { return delayed_weight_; }
   double& mu() { return mu_; }
   const double& mu() const { return mu_; }
   double& time() { return time_; }

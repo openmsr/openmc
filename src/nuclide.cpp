@@ -544,11 +544,33 @@ double Nuclide::nu(double E, EmissionMode mode, int group) const
       return 0.0;
     }
   case EmissionMode::total:
+    // if (settings::create_delayed_neutrons_static) {
+    //   auto rx = fission_rx_[0];
+    //   double nu {0.0};
+    //   // consider also prompt group
+    //   for (int i = 0; i < rx->products_.size(); ++i) {
+    //     // Skip any non-neutron products
+    //     const auto& product = rx->products_[i];
+    //     if (product.particle_ != ParticleType::neutron)
+    //       continue;
+    //
+    //     if (i == 0) {
+    //       if (product.emission_mode_ == EmissionMode::prompt) {
+    //       nu += (*product.yield_)(E);
+    //       }
+    //     } else {
+    //       if (product.emission_mode_ == EmissionMode::delayed) {
+    //       nu += settings::weight_delayed_neutrons * (*product.yield_)(E);
+    //       }
+    //     }
+    //   }
+    //   return nu;
+    // } else if (total_nu_ && settings::create_delayed_neutrons) {
     if (total_nu_ && settings::create_delayed_neutrons) {
-      return (*total_nu_)(E);
-    } else {
-      return (*fission_rx_[0]->products_[0].yield_)(E);
-    }
+        return (*total_nu_)(E);
+      } else {
+        return (*fission_rx_[0]->products_[0].yield_)(E);
+        }
   }
   UNREACHABLE();
 }

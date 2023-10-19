@@ -47,6 +47,7 @@ bool cmfd_run {false};
 bool confidence_intervals {false};
 bool create_delayed_neutrons {true};
 bool create_fission_neutrons {true};
+bool create_delayed_neutrons_static {false};
 bool delayed_photon_scaling {true};
 bool entropy_on {false};
 bool event_based {false};
@@ -125,6 +126,7 @@ int trigger_batch_interval {1};
 int verbosity {7};
 double weight_cutoff {0.25};
 double weight_survive {1.0};
+double weight_delayed_neutrons {1.0};
 
 } // namespace settings
 
@@ -180,6 +182,10 @@ void get_run_parameters(pugi::xml_node node_base)
     if (check_for_node(node_base, "generations_per_batch")) {
       gen_per_batch =
         std::stoi(get_node_value(node_base, "generations_per_batch"));
+    }
+
+    if (check_for_node(node_base, "weight_delayed_neutrons")) {
+      weight_delayed_neutrons = std::stod(get_node_value(node_base, "weight_delayed_neutrons"));
     }
 
     // Preallocate space for keff and entropy by generation
@@ -897,6 +903,12 @@ void read_settings_xml(pugi::xml_node root)
       get_node_value_bool(root, "create_delayed_neutrons");
   }
 
+  // Check whether create delayed neutrons in fission
+  if (check_for_node(root, "create_delayed_neutrons_static")) {
+    create_delayed_neutrons_static =
+      get_node_value_bool(root, "create_delayed_neutrons_static");
+  }
+  
   // Check whether create fission sites
   if (run_mode == RunMode::FIXED_SOURCE) {
     if (check_for_node(root, "create_fission_neutrons")) {

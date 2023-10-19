@@ -68,6 +68,7 @@ TrackState ParticleData::get_track_state() const
   state.E = this->E();
   state.time = this->time();
   state.wgt = this->wgt();
+  state.delayed_weight = this->delayed_weight();
   state.cell_id = model::cells[this->lowest_coord().cell]->id_;
   state.cell_instance = this->cell_instance();
   if (this->material() != MATERIAL_VOID) {

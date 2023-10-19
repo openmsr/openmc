@@ -632,6 +632,7 @@ void absorption(Particle& p, int i_nuclide)
     // Score implicit absorption estimate of keff
     if (settings::run_mode == RunMode::EIGENVALUE) {
       p.keff_tally_absorption() += wgt_absorb *
+                                   p.delayed_weight() *
                                    p.neutron_xs(i_nuclide).nu_fission /
                                    p.neutron_xs(i_nuclide).absorption;
     }
@@ -642,6 +643,7 @@ void absorption(Particle& p, int i_nuclide)
       // Score absorption estimate of keff
       if (settings::run_mode == RunMode::EIGENVALUE) {
         p.keff_tally_absorption() += p.wgt() *
+                                     p.delayed_weight() *
                                      p.neutron_xs(i_nuclide).nu_fission /
                                      p.neutron_xs(i_nuclide).absorption;
       }
@@ -1061,6 +1063,10 @@ void sample_fission_neutron(
     // set the delayed group for the particle born from fission
     site->delayed_group = group;
 
+    if (settings::create_delayed_neutrons_static) {
+      //  std::cout << "Particle group: " << group << std::endl;
+      site->delayed_weight = settings::weight_delayed_neutrons;
+    }
   } else {
     // ====================================================================
     // PROMPT NEUTRON SAMPLED

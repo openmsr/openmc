@@ -108,6 +108,7 @@ void Particle::from_source(const SourceSite* src)
   // Copy attributes from source bank site
   type() = src->particle;
   wgt() = src->wgt;
+  delayed_weight() = src->delayed_weight;
   wgt_last() = src->wgt;
   r() = src->r;
   u() = src->u;
@@ -237,7 +238,7 @@ void Particle::event_advance()
   // Score track-length estimate of k-eff
   if (settings::run_mode == RunMode::EIGENVALUE &&
       type() == ParticleType::neutron) {
-    keff_tally_tracklength() += wgt() * distance * macro_xs().nu_fission;
+    keff_tally_tracklength() += wgt() * delayed_weight() * distance * macro_xs().nu_fission;
   }
 
   // Score flux derivative accumulators for differential tallies.
@@ -285,7 +286,7 @@ void Particle::event_collide()
   // Score collision estimate of keff
   if (settings::run_mode == RunMode::EIGENVALUE &&
       type() == ParticleType::neutron) {
-    keff_tally_collision() += wgt() * macro_xs().nu_fission / macro_xs().total;
+    keff_tally_collision() += wgt() * delayed_weight() * macro_xs().nu_fission / macro_xs().total;
   }
 
   // Score surface current tallies -- this has to be done before the collision
@@ -590,7 +591,7 @@ void Particle::cross_vacuum_bc(const Surface& surf)
   }
 
   // Score to global leakage tally
-  keff_tally_leakage() += wgt();
+  keff_tally_leakage() += wgt() * delayed_weight();
 
   // Kill the particle
   wgt() = 0.0;
