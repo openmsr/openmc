@@ -154,6 +154,7 @@ void write_mcpl_source_bank(mcpl_outfile_t file_id,
         p.ekin = site.E * 1e-6;
         p.time = site.time * 1e3;
         p.weight = site.wgt;
+        p.userflags = static_cast<uint32_t>(site.parent_id);
 
         switch (site.particle) {
         case ParticleType::neutron:
@@ -206,6 +207,7 @@ void write_mcpl_source_point(const char* filename,
   std::string line;
   if (mpi::master) {
     file_id = mcpl_create_outfile(filename_.c_str());
+    mcpl_enable_userflags(file_id);
     if (VERSION_DEV) {
       line = fmt::format("OpenMC {0}.{1}.{2}-development", VERSION_MAJOR,
         VERSION_MINOR, VERSION_RELEASE);
