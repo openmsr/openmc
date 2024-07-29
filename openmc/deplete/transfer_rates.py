@@ -118,12 +118,13 @@ class ExternalRates:
 
         """
         material_id = self._get_material_id(material)
+        all_components = []
         if material_id in self.external_rates:
-            components = [
-                comp for comp,vals in self.external_rates[material_id].items() \
-                    if timestep in vals[0][0]
-            ]
-            return components
+            mat_components = self.external_rates[material_id]
+            for component in mat_components:
+                if np.isin(timestep, [val[0] for val in mat_components[component]]):
+                    all_components.append(component)
+        return all_components
 
 class TransferRates(ExternalRates):
     """Class for defining continuous removals and feeds.
