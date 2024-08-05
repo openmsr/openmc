@@ -692,7 +692,7 @@ class Integrator(ABC):
 
         self._solver = func
 
-    def _timed_deplete(self, n, rates, dt, i, matrix_func=None):
+    def _timed_deplete(self, n, rates, dt, i=None, matrix_func=None):
         start = time.time()
         results = deplete(
             self._solver, self.chain, n, rates, dt, i, matrix_func,

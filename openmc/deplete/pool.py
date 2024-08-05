@@ -40,7 +40,7 @@ def _distribute(items):
             return items[j:j + chunk_size]
         j += chunk_size
 
-def deplete(func, chain, n, rates, dt, current_timestep, matrix_func=None,
+def deplete(func, chain, n, rates, dt, current_timestep=None, matrix_func=None,
             transfer_rates=None, external_source_rates=None, *matrix_args):
     """Deplete materials using given reaction rates for a specified time
 
@@ -128,8 +128,8 @@ def deplete(func, chain, n, rates, dt, current_timestep, matrix_func=None,
                 # Calculate transfer rate terms as diagonal matrices
                 transfer_pair = dict()
                 for mat_pair in transfer_rates.index_transfer:
-                    transfer_matrix = chain.form_rr_term(transfer_rates, 
-                                                         current_timestep, 
+                    transfer_matrix = chain.form_rr_term(transfer_rates,
+                                                         current_timestep,
                                                          mat_pair)
                     # check if destination material has a redox control
                     if mat_pair[0] in transfer_rates.redox:
