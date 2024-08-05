@@ -173,6 +173,8 @@ class TransferRates(ExternalRates):
         )
 
         self.index_transfer = set()
+        self.chain_nuclides = [nuc.name for nuc in operator.chain.nuclides]
+        self.redox = dict()
 
     def get_destination_material(self, material, component):
         """Return destination material for given material and
@@ -301,6 +303,15 @@ class TransferRates(ExternalRates):
             self.external_timesteps = np.unique(np.concatenate(
                     [self.external_timesteps, timesteps]))
 
+    def set_redox(self, material, buffer, oxidation_states):
+        material_id = self._get_material_id(material)
+        for nuc in buffer:
+            check_value('redox buffer', nuc, self.chain_nuclides)
+        self.redox[material_id] =  buffer
+        for elm in oxidation_states:
+            if elm not in ELEMENT_SYMBOL.values():
+                raise ValueError(f'{elm} is not a valid element.')
+        self.oxidation_states = oxidation_states
 
 class ExternalSourceRates(ExternalRates):
     """Class for defining external source rates.
