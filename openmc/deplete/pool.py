@@ -115,7 +115,7 @@ def deplete(func, chain, n, rates, dt, current_timestep=None, matrix_func=None,
                                                 transfer_rates.redox[mat_id],
                                                 transfer_rates.oxidation_states)
 
-        if len(transfer_rates.index_transfer) > 0:
+        if current_timestep in transfer_rates.index_transfer:
             # Gather all on comm.rank 0
             matrices = comm.gather(matrices)
             n = comm.gather(n)
@@ -127,7 +127,7 @@ def deplete(func, chain, n, rates, dt, current_timestep=None, matrix_func=None,
 
                 # Calculate transfer rate terms as diagonal matrices
                 transfer_pair = dict()
-                for mat_pair in transfer_rates.index_transfer:
+                for mat_pair in transfer_rates.index_transfer[current_timestep]:
                     transfer_matrix = chain.form_rr_term(transfer_rates,
                                                          current_timestep,
                                                          mat_pair)
@@ -150,7 +150,7 @@ def deplete(func, chain, n, rates, dt, current_timestep=None, matrix_func=None,
                         if row == col:
                             # Fill the diagonals with the Bateman matrices
                             cols.append(matrices[row])
-                        elif mat_pair in transfer_rates.index_transfer:
+                        elif mat_pair in transfer_rates.index_transfer[current_timestep]:
                             # Fill the off-diagonals with the transfer pair matrices
                             cols.append(transfer_pair[mat_pair])
                         else:
