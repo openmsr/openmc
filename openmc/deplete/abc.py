@@ -769,7 +769,7 @@ class Integrator(ABC):
         rates = res.rates[0]
         k = ufloat(res.k[0, 0], res.k[0, 1])
         
-        if res.source_rate != 0.0 or np.any(rates):
+        if res.source_rate != 0.0:
             # Scale reaction rates by ratio of source rates
             rates *= source_rate / res.source_rate
         return bos_conc, OperatorResult(k, rates)
