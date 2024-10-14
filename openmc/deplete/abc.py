@@ -749,13 +749,15 @@ class Integrator(ABC):
     def _get_bos_data_from_restart(self, source_rate, bos_conc):
         """Get beginning of step concentrations, reaction rates from restart"""
         res = self.operator.prev_res[-1]
+
         # Depletion methods expect list of arrays
         bos_conc = list(res.data[0])
         rates = res.rates[0]
         k = ufloat(res.k[0, 0], res.k[0, 1])
 
-        # Scale reaction rates by ratio of source rates
-        rates *= source_rate / res.source_rate
+        if np.any(rates):
+            # Scale reaction rates by ratio of source rates
+            rates *= source_rate / res.source_rate
         return bos_conc, OperatorResult(k, rates)
 
     def _get_start_data(self):
