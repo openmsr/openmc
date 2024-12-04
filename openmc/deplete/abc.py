@@ -768,7 +768,7 @@ class Integrator(ABC):
         bos_conc = list(res.data[0])
         rates = res.rates[0]
         k = ufloat(res.k[0, 0], res.k[0, 1])
-        
+
         if res.source_rate != 0.0:
             # Scale reaction rates by ratio of source rates
             rates *= source_rate / res.source_rate
@@ -846,7 +846,7 @@ class Integrator(ABC):
                         root = None
                     n, res = self._get_bos_data_from_operator(i, source_rate, n)
                 else:
-                    n, res = self._get_bos_data_from_restart(i, source_rate, n)
+                    n, res = self._get_bos_data_from_restart(source_rate, n)
                     if self.batchwise:
                         root = self.operator.prev_res[-1].batchwise
                         #TODO: this is just temporary (import math)
