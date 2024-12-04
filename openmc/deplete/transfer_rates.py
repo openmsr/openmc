@@ -101,13 +101,14 @@ class ExternalRates:
 
         """
         material_id = self._get_material_id(material)
+        check_type('component', component, str)
         if destination_material is not None:
             dest_mat_id = self._get_material_id(destination_material)
-        else:
-            dest_mat_id = None
-        check_type('component', component, str)
-        return [i[1] for i in self.external_rates[material_id][component]
+            return [i[1] for i in self.external_rates[material_id][component]
                 if timestep in i[0] and dest_mat_id==i[2]]
+        else:
+            return [i[1] for i in self.external_rates[material_id][component]
+                if timestep in i[0]]
 
     def get_components(self, material, timestep, destination_material=None):
         """Extract removing elements and/or nuclides for a given material at a
@@ -134,15 +135,24 @@ class ExternalRates:
             dest_mat_id = self._get_material_id(destination_material)
         else:
             dest_mat_id = None
+            
         all_components = []
         if material_id in self.external_rates:
             mat_components = self.external_rates[material_id]
+
             for component in mat_components:
-                if np.isin(timestep,
-                           [val[0] for val in mat_components[component]]) and \
-                   np.isin(dest_mat_id,
-                           [val[2] for val in mat_components[component]]):
-                    all_components.append(component)
+                if dest_mat_id:
+                    #check for both timestep and destination material ids
+                    if np.isin(timestep,
+                            [val[0] for val in mat_components[component]]) and \
+                       np.isin(dest_mat_id,
+                            [val[2] for val in mat_components[component]]):
+                        all_components.append(component)
+                else:
+                    #check only for timesteps
+                    if np.isin(timestep,
+                            [val[0] for val in mat_components[component]]):
+                        all_components.append(component)
         return all_components
 
 class TransferRates(ExternalRates):
@@ -294,17 +304,17 @@ class TransferRates(ExternalRates):
                      transfer_rate / unit_conv,
                      destination_material_id)]
 
-            if destination_material_id is not None:
-                for timestep in timesteps:
-                    if timestep not in self.index_transfer:
-                        self.index_transfer[timestep] = [(destination_material_id,
-                                                        material_id)]
-                    else:
-                        self.index_transfer[timestep].append((destination_material_id,
-                                                        material_id))
+        if destination_material_id is not None:
+            for timestep in timesteps:
+                if timestep not in self.index_transfer:
+                    self.index_transfer[timestep] = [(destination_material_id,
+                                                    material_id)]
+                else:
+                    self.index_transfer[timestep].append((destination_material_id,
+                                                    material_id))
 
-            self.external_timesteps = np.unique(np.concatenate(
-                    [self.external_timesteps, timesteps]))
+        self.external_timesteps = np.unique(np.concatenate(
+                [self.external_timesteps, timesteps]))
 
     def set_redox(self, material, buffer, oxidation_states):
         material_id = self._get_material_id(material)

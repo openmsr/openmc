@@ -741,9 +741,9 @@ class Chain:
             # Build transfer terms matrices
             if isinstance(mats, str):
                 mat = mats
-                if not tr_rates.get_components(mat, current_timestep):
-                    break
                 components = tr_rates.get_components(mat, current_timestep)
+                if not components:
+                    break
                 if elm in components:
                     matrix[i, i] = sum(tr_rates.get_external_rate(mat,
                                                     elm, current_timestep))
@@ -766,10 +766,8 @@ class Chain:
                     matrix[i, i] = 0.0
             #Nothing else is allowed
 
-        n = len(self)
-        matrix_dok = sp.dok_matrix((n, n))
-        dict.update(matrix_dok, matrix)
-        return matrix_dok.tocsc()
+        # Return CSC instead of DOK
+        return matrix.tocsc()
 
     def form_ext_source_term(self, ext_source_rates, current_timestep, mat):
         """Function to form the external source rate term vectors.
