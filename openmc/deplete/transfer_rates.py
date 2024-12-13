@@ -17,10 +17,8 @@ class ExternalRates:
     ----------
     operator : openmc.TransportOperator
         Depletion operator
-    model : openmc.Model
-        OpenMC model containing materials and geometry. If using
-        :class:`openmc.deplete.CoupledOperator`, the model must also contain
-        a :class:`opnemc.Settings` object.
+    materials : openmc.Model
+        OpenMC materials.
     number_of_timesteps : int
         Total number of depletion timesteps
 
@@ -39,9 +37,9 @@ class ExternalRates:
         Container of all timesteps indeces with an external rate defined.
     """
 
-    def __init__(self, operator, model, number_of_timesteps):
+    def __init__(self, operator, materials, number_of_timesteps):
 
-        self.materials = model.materials
+        self.materials = materials
         self.burnable_mats = operator.burnable_mats
         self.local_mats = operator.local_mats
         self.number_of_timesteps = number_of_timesteps
@@ -135,7 +133,7 @@ class ExternalRates:
             dest_mat_id = self._get_material_id(destination_material)
         else:
             dest_mat_id = None
-            
+
         all_components = []
         if material_id in self.external_rates:
             mat_components = self.external_rates[material_id]
@@ -171,10 +169,8 @@ class TransferRates(ExternalRates):
     ----------
     operator : openmc.TransportOperator
         Depletion operator
-    model : openmc.Model
-        OpenMC model containing materials and geometry. If using
-        :class:`openmc.deplete.CoupledOperator`, the model must also contain
-        a :class:`opnemc.Settings` object.
+    materials : openmc.Model
+        OpenMC materials.
     number_of_timesteps : int
         Total number of depletion timesteps
 
@@ -193,11 +189,11 @@ class TransferRates(ExternalRates):
         Pair of strings needed to build final matrix (destination_material, mat)
     """
 
-    def __init__(self, operator, model, number_of_timesteps):
+    def __init__(self, operator, materials, number_of_timesteps):
 
         super().__init__(
             operator,
-            model,
+            materials,
             number_of_timesteps
         )
 
@@ -338,10 +334,8 @@ class ExternalSourceRates(ExternalRates):
     ----------
     operator : openmc.TransportOperator
         Depletion operator
-    model : openmc.Model
-        OpenMC model containing materials and geometry. If using
-        :class:`openmc.deplete.CoupledOperator`, the model must also contain
-        a :class:`opnemc.Settings` object.
+    materials : openmc.Model
+        OpenMC materials.
     number_of_timesteps : int
         Total number of depletion timesteps
 
@@ -358,11 +352,11 @@ class ExternalSourceRates(ExternalRates):
         (elements and/or nuclides)
     """
 
-    def __init__(self, operator, model, number_of_timesteps):
+    def __init__(self, operator, materials, number_of_timesteps):
 
         super().__init__(
             operator,
-            model,
+            materials,
             number_of_timesteps
         )
 
