@@ -8,6 +8,7 @@ import numbers
 import numpy as np
 import scipy.sparse as sp
 import scipy.sparse.linalg as sla
+from pathlib import Path 
 
 from openmc.checkvalue import check_type, check_length
 from .abc import DepSystemSolver
@@ -75,6 +76,8 @@ class IPFCramSolver(DepSystemSolver):
             Final compositions after ``dt``
 
         """
+        Path('sim.done').touch()
+        sp.save_npz('sparse_matrix.npz', sp.csc_matrix(A, dtype=np.float64))
         A = dt * sp.csc_matrix(A, dtype=np.float64)
         y = n0.copy()
         ident = sp.eye(A.shape[0], format='csc')
