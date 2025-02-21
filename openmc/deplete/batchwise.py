@@ -1979,10 +1979,14 @@ class BatchwiseSchemeStd():
     first_dilute : int or None
         Timestep index for first dilution, to be used during restart simulation
         Default to None
+    store_mat_root : bool
+        Whether or not to store material root. If False the restart geometrical
+        level will be stored.
+        Default to False
     """
 
     def __init__(self, bw_list, n_timesteps, dilute_interval, restart_level,
-                 first_dilute=None, interrupt=False):
+                 first_dilute=None, interrupt=False, store_mat_root=False):
 
         if isinstance(bw_list, list):
             for bw in bw_list:
@@ -2015,6 +2019,7 @@ class BatchwiseSchemeStd():
         else:
             self.dilute_interval = dilute_interval
         self.interrupt = interrupt
+        self.store_mat_root = store_mat_root
 
     def get_root(self):
         return self.bw_geom.get_root()
@@ -2057,8 +2062,10 @@ class BatchwiseSchemeStd():
 
             # restart level and perform dilution
             self.bw_geom._set_cell_attrib(self.restart_level)
-            x, _ = self.bw_mat.search_for_keff(x, step_index)
-            root = self.restart_level
+            x, root = self.bw_mat.search_for_keff(x, step_index)
+
+            if not self.store_mat_root:
+                root = self.restart_level
             #update dulution interval
             #if step_index == self.dilute_interval:
             #    self.dilute_interval += self.step_interval
