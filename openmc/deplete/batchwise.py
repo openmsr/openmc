@@ -526,16 +526,11 @@ class Batchwise(ABC):
                 for nuc in number_i.nuclides:
                     elm = re.split(r'\d+', nuc)[0]
                     if elm in ['Li', 'Th', 'U']:
-                        # alwyas consider 1 anion of Fluorine
-                        ions = self.oxidation_states[elm] + 1
-                        atoms_per_elm[elm] += number_i[mat_id, nuc] * ions
+                        atoms_per_elm[elm] += number_i[mat_id, nuc]
                     elif elm in tru:
-                        ions = self.oxidation_states[elm] + 1
-                        atoms_per_elm['TRU'] += number_i[mat_id, nuc] * ions
-
+                        atoms_per_elm['TRU'] += number_i[mat_id, nuc]
                 mol_comp = {k:100*v/sum(atoms_per_elm.values()) for k,v in \
                                                 atoms_per_elm.items()}
-
         return mol_comp
 
     def _get_redox(self, mat_rx_id):
@@ -976,7 +971,7 @@ class BatchwiseCellGeometrical(BatchwiseCell):
         self.attrib_name = attrib_name
 
         # check if cell is filled with 2 cells
-        if not isinstance(self.cell.fill, openmc.universe.DAGMCUniverse):
+        if not isinstance(self.cell.fill, openmc.DAGMCUniverse):
 
             check_length('fill materials', self.cell.fill.cells, 2)
             self.cell_materials = [cell.fill for cell in \
