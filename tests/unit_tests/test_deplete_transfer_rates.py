@@ -16,6 +16,7 @@ CHAIN_PATH = Path(__file__).parents[1] / "chain_simple.xml"
 
 @pytest.fixture
 def model():
+    openmc.reset_auto_ids()
     f = openmc.Material(name="f")
     f.add_element("U", 1, percent_type="ao", enrichment=4.25)
     f.add_element("O", 2)
@@ -71,11 +72,9 @@ def model():
     ])
 def test_get_set(model, case_name, transfer_rates, timesteps):
     """Tests the get/set methods"""
-
-    openmc.reset_auto_ids()
     op = CoupledOperator(model, CHAIN_PATH)
     number_of_timesteps = 2
-    transfer = TransferRates(op, model, number_of_timesteps)
+    transfer = TransferRates(op, model.materials, number_of_timesteps)
 
     if timesteps is None:
         timesteps = np.arange(number_of_timesteps)
@@ -170,7 +169,7 @@ def test_units(transfer_rate_units, unit_conv, model):
     transfer_rate = 1e-5
     number_of_timesteps = 2
     op = CoupledOperator(model, CHAIN_PATH)
-    transfer = TransferRates(op, model, number_of_timesteps)
+    transfer = TransferRates(op, model.materials, number_of_timesteps)
 
     for component in components:
         transfer.set_transfer_rate('f', [component], transfer_rate * unit_conv,

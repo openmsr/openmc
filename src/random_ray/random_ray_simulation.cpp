@@ -196,8 +196,8 @@ void validate_random_ray_inputs()
                   "supported in random ray mode.");
     }
     if (material.get_xsdata().size() > 1) {
-      fatal_error("Non-isothermal MGXS detected. Only isothermal XS data sets "
-                  "supported in random ray mode.");
+      warning("Non-isothermal MGXS detected. Only isothermal XS data sets "
+              "supported in random ray mode. Using lowest temperature.");
     }
     for (int g = 0; g < data::mg.num_energy_groups_; g++) {
       if (material.exists_in_model) {
@@ -508,8 +508,9 @@ void RandomRaySimulation::simulate()
         domain_->accumulate_iteration_flux();
 
         // Generate mapping between source regions and tallies
-        if (!domain_->mapped_all_tallies_) {
-          domain_->convert_source_regions_to_tallies();
+        if (!domain_->mapped_all_tallies_ &&
+            !RandomRay::mesh_subdivision_enabled_) {
+          domain_->convert_source_regions_to_tallies(0);
         }
 
         // Use above mapping to contribute FSR flux data to appropriate
