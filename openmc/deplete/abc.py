@@ -26,7 +26,7 @@ from openmc.utility_funcs import change_directory
 
 from openmc import Material
 from .stepresult import StepResult
-from .chain import Chain
+from .chain import _get_chain
 from .results import Results, _SECONDS_PER_MINUTE, _SECONDS_PER_HOUR, \
     _SECONDS_PER_DAY, _SECONDS_PER_JULIAN_YEAR
 from .pool import deplete
@@ -131,8 +131,8 @@ class TransportOperator(ABC):
 
     Parameters
     ----------
-    chain_file : str
-        Path to the depletion chain XML file
+    chain_file : PathLike or Chain
+        Path to the depletion chain XML file or instance of openmc.deplete.Chain.
     fission_q : dict, optional
         Dictionary of nuclides and their fission Q values [eV]. If not given,
         values will be pulled from the ``chain_file``.
@@ -150,11 +150,12 @@ class TransportOperator(ABC):
         The depletion chain information necessary to form matrices and tallies.
 
     """
-    def __init__(self, chain_file, fission_q=None, prev_results=None):
+    def __init__(self, chain_file=None, fission_q=None, prev_results=None):
         self.output_dir = '.'
 
         # Read depletion chain
-        self.chain = Chain.from_xml(chain_file, fission_q)
+        self.chain = _get_chain(chain_file, fission_q)
+
         if prev_results is None:
             self.prev_res = None
         else:
@@ -827,7 +828,32 @@ class Integrator(ABC):
             rates *= source_rate / res.source_rate
         return bos_conc, OperatorResult(k, rates)
 
-    def _get_start_data(self):
+    def _get_start_data(self) -> tuple[float, int]:
+        """
+        This function fetches the starting state of a depletion simulation in
+        terms of the simulation physical time at which to start and the index at
+        which the depletion simulation should start. When no previous results
+        exist, the time and index are both zero. When previous results do exist,
+        it returns the time corresponding to beginning the previous results last
+        timestep and the index as N-1 where N is the number of previous
+        StepResults found in the previous Results (as expected from 0-based
+        indexing).
+
+        Note that the openmc.deplete.Results.time object is a list of float with
+        [t,t+dt] where t is the beginning of timestep time and t+dt is the end
+        of timestep time. If the previous results correspond to a simulation
+        that finished to completeion, it will contain a results in the form of
+        [t,t], but if a simulation doesn't finish all the given timesteps, it is
+        the t that is the desired start time, not t+dt. Thus, it is always safe
+        to take time[0].
+
+        Returns
+        -------
+        start_time : float
+            Time at which depletion simulation should start in [s]
+        index : int
+            Index at which depletion simulation should start
+        """
         if self.operator.prev_res is None:
             return 0.0, 0
         else:
@@ -1049,14 +1075,14 @@ class Integrator(ABC):
         return adapt
 
     def add_transfer_rate(
-            self,
-            material: Union[str, int, Material],
-            components: Sequence[str],
-            transfer_rate: float,
-            transfer_rate_units: str = '1/s',
-            timesteps: Iterable = None,
-            destination_material: Optional[Union[str, int, Material]] = None
-        ):
+        self,
+        material: str | int | Material,
+        components: Sequence[str],
+        transfer_rate: float,
+        transfer_rate_units: str = '1/s',
+        timesteps: Sequence[int] | None = None,
+        destination_material: str | int | Material | None = None
+    ):
         """Add transfer rates to depletable material.
 
         Parameters
@@ -1070,11 +1096,15 @@ class Integrator(ABC):
         transfer_rate : float
             Rate at which elements are transferred. A positive or negative values
             set removal of feed rates, respectively.
-        destination_material : openmc.Material or str or int, Optional
-            Destination material to where nuclides get fed.
         transfer_rate_units : {'1/s', '1/min', '1/h', '1/d', '1/a'}
             Units for values specified in the transfer_rate argument. 's' means
             seconds, 'min' means minutes, 'h' means hours, 'a' means Julian years.
+        timesteps : list of int, optional
+            List of timestep indices where to set external source rates.
+            Defaults to None, which means the external source rate is set for
+            all timesteps.
+        destination_material : openmc.Material or str or int, Optional
+            Destination material to where nuclides get fed.
 
         """
         if self.transfer_rates is None:
@@ -1082,16 +1112,63 @@ class Integrator(ABC):
                 materials = self.operator.model.materials
             elif hasattr(self.operator, 'materials'):
                 materials = self.operator.materials
-            self.transfer_rates = TransferRates(self.operator, materials,
-                                      len(self.timesteps))
+            self.transfer_rates = TransferRates(
+                self.operator, materials, len(self.timesteps))
 
         if self.external_source_rates is not None and destination_material:
             raise ValueError('Currently is not possible to set a transfer rate '
                              'with destination matrial in combination with '
                              'external source rates.')
 
-        self.transfer_rates.set_transfer_rate(material, components, transfer_rate,
-                                      transfer_rate_units, timesteps, destination_material)
+        self.transfer_rates.set_transfer_rate(
+            material, components, transfer_rate, transfer_rate_units,
+            timesteps, destination_material)
+
+    def add_external_source_rate(
+        self,
+        material: str | int | Material,
+        composition: dict[str, float],
+        rate: float,
+        rate_units: str = 'g/s',
+        timesteps: Sequence[int] | None = None
+    ):
+        """Add external source rates to depletable material.
+
+        Parameters
+        ----------
+        material : openmc.Material or str or int
+            Depletable material
+        composition : dict of str to float
+            External source rate composition vector, where key can be an element
+            or a nuclide and value the corresponding weight percent.
+        rate : float
+            External source rate in units of mass per time. A positive or
+            negative value corresponds to a feed or removal rate, respectively.
+        units : {'g/s', 'g/min', 'g/h', 'g/d', 'g/a'}
+            Units for values specified in the `rate` argument. 's' for seconds,
+            'min' for minutes, 'h' for hours, 'a' for Julian years.
+        timesteps : list of int, optional
+            List of timestep indices where to set external source rates.
+            Defaults to None, which means the external source rate is set for
+            all timesteps.
+
+        """
+        if self.external_source_rates is None:
+            if hasattr(self.operator, 'model'):
+                materials = self.operator.model.materials
+            elif hasattr(self.operator, 'materials'):
+                materials = self.operator.materials
+            self.external_source_rates = ExternalSourceRates(
+                self.operator, materials, len(self.timesteps))
+
+        if self.transfer_rates is not None and self.transfer_rates.index_transfer:
+            raise ValueError('Currently is not possible to set an external '
+                             'source rate in combination with transfer rates '
+                             'with destination matrial.')
+
+        self.external_source_rates.set_external_source_rate(
+            material, composition, rate, rate_units, timesteps)
+
 
     def add_external_source_rate(
             self,
@@ -1333,10 +1410,10 @@ class SIIntegrator(Integrator):
         return inherited
 
     def integrate(
-            self,
-            output: bool = True,
-            path: PathLike = "depletion_results.h5"
-        ):
+        self,
+        output: bool = True,
+        path: PathLike = "depletion_results.h5"
+    ):
         """Perform the entire depletion process across all steps
 
         Parameters
