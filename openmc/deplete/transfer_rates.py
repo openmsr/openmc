@@ -54,6 +54,7 @@ class ExternalRates:
         # initialize transfer rates container dict
         self.external_rates = {mat: defaultdict(list) for mat in self.burnable_mats}
         self.external_timesteps = []
+        self.redox = {}
 
     def _get_material_id(self, val):
         """Helper method for getting material id from Material obj or name.
