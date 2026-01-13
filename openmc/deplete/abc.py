@@ -18,14 +18,12 @@ from typing import Optional, Union, Sequence
 from warnings import warn
 
 import numpy as np
-
 from uncertainties import ufloat
 
 from openmc.checkvalue import check_type, check_greater_than, PathLike, check_value
 from openmc.mpi import comm
 from openmc.utility_funcs import change_directory
-
-from openmc import Material
+from openmc import Material, Cell
 from .stepresult import StepResult
 from .chain import _get_chain
 from .results import Results, _SECONDS_PER_MINUTE, _SECONDS_PER_HOUR, \
@@ -33,7 +31,6 @@ from .results import Results, _SECONDS_PER_MINUTE, _SECONDS_PER_HOUR, \
 from .pool import deplete
 from .reaction_rates import ReactionRates
 from .transfer_rates import TransferRates, ExternalSourceRates
-from openmc import Material, Cell
 from .batchwise import (BatchwisePure, BatchwiseCellGeometrical, BatchwiseCellTemperature,
     BatchwiseMaterialRefuel, BatchwiseMaterialDilute, BatchwiseMaterialAdd,
     BatchwiseSchemeStd, BatchwiseSchemeRefuel, BatchwiseSchemeFlex)
@@ -614,16 +611,20 @@ class Integrator(ABC):
               next time step. Expected to be of the same shape as ``n0``
 
     transfer_rates : openmc.deplete.TransferRates
-        Instance of TransferRates class to perform continuous transfer during depletion
+        Transfer rates for the depletion system used to model continuous
+        removal/feed between materials.
+
+        .. versionadded:: 0.14.0
+    external_source_rates : openmc.deplete.ExternalSourceRates
+        External source rates for the depletion system.
+
+        .. versionadded:: 0.15.3
+    
     batchwise : openmc.deplete.Batchwise
         Instance of Batchwise class to perform batch-wise scheme during
         transport-depletion simulation.
 
-        .. versionadded:: 0.14.0
-    external_source_rates : openmc.deplete.ExternalSourceRates
-        Instance of ExternalSourceRates class to add an external source term.
-
-        .. versionadded:: 0.15.1
+        .. versionadded:: 0.15.4
 
     """)
 
@@ -804,7 +805,6 @@ class Integrator(ABC):
     def _get_bos_data_from_restart(self, source_rate, bos_conc):
         """Get beginning of step concentrations, reaction rates from restart"""
         res = self.operator.prev_res[-1]
-
         # Depletion methods expect list of arrays
         bos_conc = list(res.data)
         rates = res.rates
@@ -843,9 +843,8 @@ class Integrator(ABC):
         """
         if self.operator.prev_res is None:
             return 0.0, 0
-        else:
-            return (self.operator.prev_res[-1].time[-1],
-                    len(self.operator.prev_res) - 1)
+        return (self.operator.prev_res[-1].time[-1],
+                len(self.operator.prev_res) - 1)
 
     def _get_bos_from_batchwise(self, step_index, bos_conc):
         """Get BOS from criticality batch-wise control
@@ -1177,6 +1176,7 @@ class Integrator(ABC):
 
         self.external_source_rates.set_external_source_rate(
             material, composition, rate, rate_units, timesteps)
+
 
     def add_redox(self, material, buffer, oxidation_states, timesteps=None):
         """Add redox control to depletable material.

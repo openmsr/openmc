@@ -361,8 +361,8 @@ class LEQIIntegrator(Integrator):
             Time in [s] for the entire depletion interval
         source_rate : float
             Power in [W] or source rate in [neutron/sec]
-        i : int, optional
-            Current depletion step index. Not used
+        i : int
+            Current depletion step index
 
         Returns
         -------
@@ -502,8 +502,8 @@ class SILEQIIntegrator(SIIntegrator):
             Time in [s] for the entire depletion interval
         source_rate : float
             Power in [W] or source rate in [neutron/sec]
-        i : int, optional
-            Current depletion step index. Not used
+        i : int
+            Current depletion step index
 
         Returns
         -------

@@ -74,6 +74,7 @@ class StepResult:
         self.data = None
         self.batchwise = None
         self.dep_volume = None
+
     def __repr__(self):
         t = self.time[0]
         dt = self.time[1] - self.time[0]
@@ -185,7 +186,7 @@ class StepResult:
 
         # Direct transfer
         direct_attrs = ("time", "k", "source_rate", "index_nuc",
-                        "mat_to_hdf5_ind", "proc_time","batchwise")
+                        "mat_to_hdf5_ind", "proc_time", "batchwise")
         for attr in direct_attrs:
             setattr(new, attr, getattr(self, attr))
         # Get applicable slice of data
