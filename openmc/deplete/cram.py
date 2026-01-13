@@ -7,7 +7,6 @@ import numbers
 
 import numpy as np
 import scipy.sparse.linalg as sla
-from pathlib import Path 
 
 from openmc.checkvalue import check_type, check_length
 from .abc import DepSystemSolver

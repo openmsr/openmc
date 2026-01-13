@@ -11,8 +11,6 @@ from openmc.data import ELEMENT_SYMBOL, isotopes, AVOGADRO, atomic_mass
 from .results import _SECONDS_PER_MINUTE, _SECONDS_PER_HOUR, \
     _SECONDS_PER_DAY, _SECONDS_PER_JULIAN_YEAR
 
-from math import isclose
-import numpy as np
 
 
 class ExternalRates:
@@ -259,13 +257,6 @@ class TransferRates(ExternalRates):
             unit_conv = _SECONDS_PER_JULIAN_YEAR
         else:
             raise ValueError(f'Invalid transfer rate unit "{transfer_rate_units}"')
-
-        if timesteps is not None:
-            for timestep in timesteps:
-                check_value('timestep', timestep, range(self.number_of_timesteps))
-            timesteps = np.array(timesteps)
-        else:
-            timesteps = np.arange(self.number_of_timesteps)
 
         if timesteps is not None:
             for timestep in timesteps:
