@@ -55,8 +55,13 @@ void read_geometry_xml()
 void read_geometry_xml(pugi::xml_node root)
 {
   // Read surfaces, cells, lattice
-  read_surfaces(root);
+  std::set<std::pair<int, int>> periodic_pairs;
+  std::unordered_map<int, double> albedo_map;
+  std::unordered_map<int, int> periodic_sense_map;
+
+  read_surfaces(root, periodic_pairs, albedo_map, periodic_sense_map);
   read_cells(root);
+  prepare_boundary_conditions(periodic_pairs, albedo_map, periodic_sense_map);
   read_lattices(root);
 
   // Check to make sure a boundary condition was applied to at least one
@@ -189,6 +194,24 @@ void assign_temperatures()
         const auto& mat {model::materials[i_mat]};
         c->sqrtkT_.push_back(std::sqrt(K_BOLTZMANN * mat->temperature()));
       }
+    }
+  }
+}
+
+//==============================================================================
+
+void finalize_cell_densities()
+{
+  for (auto& c : model::cells) {
+    // Convert to density multipliers.
+    if (!c->density_mult_.empty()) {
+      for (int32_t instance = 0; instance < c->density_mult_.size();
+           ++instance) {
+        c->density_mult_[instance] /=
+          model::materials[c->material(instance)]->density_gpcc();
+      }
+    } else {
+      c->density_mult_ = {1.0};
     }
   }
 }
@@ -360,6 +383,17 @@ void prepare_distribcell(const std::vector<int32_t>* user_distribcells)
           "instances. The number of temperatures must equal one or the number "
           "of instances.",
           c.id_, c.sqrtkT_.size(), c.n_instances()));
+      }
+    }
+
+    if (c.density_mult_.size() > 1) {
+      if (c.density_mult_.size() != c.n_instances()) {
+        fatal_error(fmt::format("Cell {} was specified with {} density "
+                                "multipliers but has {} distributed "
+                                "instances. The number of density multipliers "
+                                "must equal one or the number "
+                                "of instances.",
+          c.id_, c.density_mult_.size(), c.n_instances()));
       }
     }
   }
