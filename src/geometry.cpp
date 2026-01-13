@@ -172,11 +172,13 @@ bool find_cell_inner(
         p.cell_instance() = cell_instance_at_level(p, p.n_coord() - 1);
       }
 
-      // Set the material and temperature.
+      // Set the material, temperature and density multiplier.
       p.material_last() = p.material();
       p.material() = c.material(p.cell_instance());
       p.sqrtkT_last() = p.sqrtkT();
       p.sqrtkT() = c.sqrtkT(p.cell_instance());
+      p.density_mult_last() = p.density_mult();
+      p.density_mult() = c.density_mult(p.cell_instance());
 
       return true;
 
@@ -478,14 +480,14 @@ extern "C" int openmc_global_bounding_box(double* llc, double* urc)
   auto bbox = model::universes.at(model::root_universe)->bounding_box();
 
   // set lower left corner values
-  llc[0] = bbox.xmin;
-  llc[1] = bbox.ymin;
-  llc[2] = bbox.zmin;
+  llc[0] = bbox.min.x;
+  llc[1] = bbox.min.y;
+  llc[2] = bbox.min.z;
 
   // set upper right corner values
-  urc[0] = bbox.xmax;
-  urc[1] = bbox.ymax;
-  urc[2] = bbox.zmax;
+  urc[0] = bbox.max.x;
+  urc[1] = bbox.max.y;
+  urc[2] = bbox.max.z;
 
   return 0;
 }
