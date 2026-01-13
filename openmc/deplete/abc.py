@@ -843,7 +843,7 @@ class Integrator(ABC):
         """
         if self.operator.prev_res is None:
             return 0.0, 0
-        return (self.operator.prev_res[-1].time[-1],
+        return (self.operator.prev_res[-1].time[0],
                 len(self.operator.prev_res) - 1)
 
     def _get_bos_from_batchwise(self, step_index, bos_conc):
