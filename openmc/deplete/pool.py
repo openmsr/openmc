@@ -19,6 +19,7 @@ USE_MULTIPROCESSING = True
 # calculations
 NUM_PROCESSES = None
 
+
 def _distribute(items):
     """Distribute items across MPI communicator
 
@@ -144,33 +145,41 @@ def deplete(func, chain, n, rates, dt, current_timestep=None, matrix_func=None,
                                           transfer_rates.redox[mat_pair[0]][1])
                     transfer_pair[mat_pair] = transfer_matrix
 
-                # Combine all matrices together in a single matrix of matrices
-                # to be solved in one go
-                n_rows = n_cols = len(transfer_rates.burnable_mats)
-                rows = []
-                for row in range(n_rows):
-                    cols = []
-                    for col in range(n_cols):
-                        mat_pair = (transfer_rates.burnable_mats[row],
-                                    transfer_rates.burnable_mats[col])
-                        if row == col:
-                            # Fill the diagonals with the Bateman matrices
-                            cols.append(matrices[row])
-                        elif mat_pair in transfer_rates.index_transfer[current_timestep]:
-                            # Fill the off-diagonals with the transfer pair matrices
-                            cols.append(transfer_pair[mat_pair])
-                        else:
-                            cols.append(None)
-
-                    rows.append(cols)
-                matrix = block_array(rows)
-
-                # Concatenate vectors of nuclides in one
-                n_multi = np.concatenate(n)
-                n_result = func(matrix, n_multi, dt, substeps)
-
-                # Split back the nuclide vector result into the original form
-                n_result = np.split(n_result, np.cumsum([len(i) for i in n])[:-1])
+                if transfer_rates.coupled_solver == "jacobi":
+                    # Block Jacobi: solve each material's Bateman matrix
+                    # independently and iterate to converge the coupling.
+                    mat_idx = {mat_id: i for i, mat_id in
+                               enumerate(transfer_rates.burnable_mats)}
+                    off_diag = {
+                        (mat_idx[dest], mat_idx[src]): t_matrix
+                        for (dest, src), t_matrix in transfer_pair.items()
+                    }
+                    n_result = func.__self__._solve_block(
+                        matrices, off_diag, n, dt, substeps,
+                        max_jacobi_iter=transfer_rates.max_jacobi_iter,
+                        tol=transfer_rates.jacobi_tol)
+                else:
+                    # Monolithic: assemble a single block matrix and solve.
+                    n_rows = n_cols = len(transfer_rates.burnable_mats)
+                    rows = []
+                    for row in range(n_rows):
+                        cols = []
+                        for col in range(n_cols):
+                            mat_pair = (transfer_rates.burnable_mats[row],
+                                        transfer_rates.burnable_mats[col])
+                            if row == col:
+                                cols.append(matrices[row])
+                            elif mat_pair in transfer_rates.index_transfer[
+                                    current_timestep]:
+                                cols.append(transfer_pair[mat_pair])
+                            else:
+                                cols.append(None)
+                        rows.append(cols)
+                    matrix = block_array(rows)
+                    n_multi = np.concatenate(n)
+                    n_result = func(matrix, n_multi, dt, substeps)
+                    n_result = np.split(
+                        n_result, np.cumsum([len(i) for i in n])[:-1])
 
             else:
                 n_result = None

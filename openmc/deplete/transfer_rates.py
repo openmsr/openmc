@@ -196,12 +196,24 @@ class TransferRates(ExternalRates):
         Container of all timesteps indeces with an external rate defined.
     index_transfer : Set of pair of str
         Pair of strings needed to build final matrix (destination_material, mat)
+    coupled_solver : {'monolithic', 'jacobi'}
+        Algorithm used to solve the coupled block system. Set automatically
+        from the integrator via :meth:`~openmc.deplete.abc.Integrator.add_transfer_rate`.
+    max_jacobi_iter : int
+        Maximum block Jacobi iterations per pole. Used when
+        ``coupled_solver='jacobi'``.
+    jacobi_tol : float
+        Relative convergence tolerance for the block Jacobi iteration. Used
+        when ``coupled_solver='jacobi'``.
     """
 
     def __init__(self, operator, materials, number_of_timesteps):
         super().__init__(operator, materials, number_of_timesteps)
         self.index_transfer = defaultdict(list)
         self.chain_nuclides = [nuc.name for nuc in operator.chain.nuclides]
+        self.coupled_solver = "monolithic"
+        self.max_jacobi_iter = 2
+        self.jacobi_tol = 1e-8
 
     def set_transfer_rate(self, material, components, transfer_rate,
                           transfer_rate_units='1/s', timesteps=None,

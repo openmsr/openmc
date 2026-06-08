@@ -20,7 +20,7 @@ from warnings import warn
 import numpy as np
 from uncertainties import ufloat
 
-from openmc.checkvalue import check_type, check_greater_than, PathLike
+from openmc.checkvalue import check_greater_than, check_type, check_value, PathLike
 from openmc.mpi import comm
 from openmc.utility_funcs import change_directory
 from openmc import Material
@@ -578,6 +578,25 @@ class Integrator(ABC):
         nuclides with large decay-constant × timestep products.
 
         .. versionadded:: 0.15.4
+    coupled_solver : {'monolithic', 'jacobi'}, optional
+        Algorithm used to solve the coupled block depletion system that arises
+        when transfer rates with a ``destination_material`` are defined.
+
+        * ``'monolithic'`` (default) – assembles all per-material matrices into
+          a single block matrix and solves it in one step.
+        * ``'jacobi'`` – solves each material's Bateman matrix independently
+          and iterates to converge the inter-material coupling terms (block
+          Jacobi). Avoids building the full block matrix and is more efficient
+          when the number of coupled materials is large. The iteration
+          parameters are controlled by ``max_jacobi_iter`` and ``jacobi_tol``.
+    max_jacobi_iter : int, optional
+        Maximum number of block Jacobi correction iterations per CRAM pole.
+        Only used when ``coupled_solver='jacobi'``. Defaults to 2.
+    jacobi_tol : float, optional
+        Relative convergence tolerance for the block Jacobi iteration. The
+        iteration stops early when the correction norm falls below
+        ``jacobi_tol * norm(x_i)`` for all receiving materials.
+        Only used when ``coupled_solver='jacobi'``. Defaults to 1e-8.
     continue_timesteps : bool, optional
         Whether or not to treat the current solve as a continuation of a
         previous simulation. Defaults to `False`. When `False`, the depletion
@@ -643,6 +662,9 @@ class Integrator(ABC):
             solver: str = "cram48",
             substeps: int = 1,
             continue_timesteps: bool = False,
+            coupled_solver: str = "monolithic",
+            max_jacobi_iter: int = 2,
+            jacobi_tol: float = 1e-8,
         ):
         if continue_timesteps and operator.prev_res is None:
             raise ValueError("Continuation run requires passing prev_results.")
@@ -665,6 +687,11 @@ class Integrator(ABC):
             timesteps, source_rates, timestep_units, operator)
         check_type("substeps", substeps, Integral)
         check_greater_than("substeps", substeps, 0)
+        check_value("coupled_solver", coupled_solver, ("monolithic", "jacobi"))
+        check_type("max_jacobi_iter", max_jacobi_iter, Integral)
+        check_greater_than("max_jacobi_iter", max_jacobi_iter, 0)
+        check_type("jacobi_tol", jacobi_tol, Real)
+        check_greater_than("jacobi_tol", jacobi_tol, 0)
 
         if continue_timesteps:
             # Get timesteps and source rates from previous results
@@ -701,6 +728,9 @@ class Integrator(ABC):
         self.transfer_rates = None
         self.external_source_rates = None
         self._keff_search_control = None
+        self.coupled_solver = coupled_solver
+        self.max_jacobi_iter = max_jacobi_iter
+        self.jacobi_tol = jacobi_tol
 
         if isinstance(solver, str):
             # Delay importing of cram module, which requires this file
@@ -994,7 +1024,7 @@ class Integrator(ABC):
         transfer_rate: float,
         transfer_rate_units: str = '1/s',
         timesteps: Sequence[int] | None = None,
-        destination_material: str | int | Material | None = None
+        destination_material: str | int | Material | None = None,
     ):
         """Add transfer rates to depletable material.
 
@@ -1013,10 +1043,10 @@ class Integrator(ABC):
             Units for values specified in the transfer_rate argument. 's' means
             seconds, 'min' means minutes, 'h' means hours, 'a' means Julian years.
         timesteps : list of int, optional
-            List of timestep indices where to set external source rates.
-            Defaults to None, which means the external source rate is set for
-            all timesteps.
-        destination_material : openmc.Material or str or int, Optional
+            List of timestep indices where to set transfer rates.
+            Defaults to None, which means the transfer rate is set for all
+            timesteps.
+        destination_material : openmc.Material or str or int, optional
             Destination material to where nuclides get fed.
 
         """
@@ -1027,6 +1057,12 @@ class Integrator(ABC):
                 materials = self.operator.materials
             self.transfer_rates = TransferRates(
                 self.operator, materials, len(self.timesteps))
+
+        # Keep coupled-solver settings on transfer_rates in sync with the
+        # integrator so pool.py can read them without knowing the integrator.
+        self.transfer_rates.coupled_solver = self.coupled_solver
+        self.transfer_rates.max_jacobi_iter = self.max_jacobi_iter
+        self.transfer_rates.jacobi_tol = self.jacobi_tol
 
         if self.external_source_rates is not None and destination_material:
             raise ValueError('Currently is not possible to set a transfer rate '
