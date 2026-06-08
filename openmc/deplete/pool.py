@@ -9,7 +9,7 @@ import numpy as np
 from scipy.sparse import hstack
 
 from openmc.mpi import comm
-from .._sparse_compat import block_array
+from .._sparse_compat import csc_array
 
 # Configurable switch that enables / disables the use of
 # multiprocessing routines during depletion
@@ -122,74 +122,112 @@ def deplete(func, chain, n, rates, dt, current_timestep=None, matrix_func=None,
                                                 transfer_rates.redox[mat_id][1])
 
         if current_timestep in transfer_rates.index_transfer:
-            # Gather all on comm.rank 0
-            matrices = comm.gather(matrices)
-            n = comm.gather(n)
+            # ── Distributed block Jacobi via pool.starmap ────────────────────
+            # Each MPI rank keeps its own local materials; no gather/broadcast
+            # is needed.  The coupling from other materials is incorporated as
+            # a constant source column (augmented-matrix approach, identical to
+            # ExternalSourceRates) and updated each Jacobi iteration using the
+            # previous full-material iterate.  Ranks exchange composed vectors
+            # via comm.allgather between iterations.
+            mat_idx = {mat_id: i for i, mat_id in enumerate(transfer_rates.burnable_mats)}
+            local_mat_idx = {mat_id: i for i, mat_id in
+                             enumerate(transfer_rates.local_mats)}
 
-            if comm.rank == 0:
-                # Expand lists
-                matrices = [elm for matrix in matrices for elm in matrix]
-                n = [n_elm for n_mat in n for  n_elm in n_mat]
+            # recv_from[local_i] = [(global_j, T_ij), ...] for every source
+            # material j that transfers nuclides into local material i.
+            recv_from = [[] for _ in range(len(transfer_rates.local_mats))]
+            for mat_pair in transfer_rates.index_transfer[current_timestep]:
+                dest, src = mat_pair
+                if dest not in local_mat_idx:
+                    continue
+                transfer_matrix = chain.form_rr_term(transfer_rates,
+                                              current_timestep, mat_pair)
+                if dest in transfer_rates.redox:
+                    transfer_matrix = chain.add_redox_term(
+                        transfer_matrix,
+                        transfer_rates.redox[dest][0],
+                        transfer_rates.redox[dest][1])
+                recv_from[local_mat_idx[dest]].append((mat_idx[src], transfer_matrix))
 
-                # Calculate transfer rate terms as diagonal matrices
-                transfer_pair = {}
-                for mat_pair in transfer_rates.index_transfer[current_timestep]:
-                    transfer_matrix = chain.form_rr_term(transfer_rates,
-                                                         current_timestep,
-                                                         mat_pair)
+            local_indices = [mat_idx[mat_id] for mat_id in transfer_rates.local_mats]
 
-                    # check if destination material has a redox control
-                    if mat_pair[0] in transfer_rates.redox:
-                        transfer_matrix = chain.add_redox_term(transfer_matrix,
-                                          transfer_rates.redox[mat_pair[0]][0],
-                                          transfer_rates.redox[mat_pair[0]][1])
-                    transfer_pair[mat_pair] = transfer_matrix
-
-                if transfer_rates.coupled_solver == "jacobi":
-                    # Block Jacobi: solve each material's Bateman matrix
-                    # independently and iterate to converge the coupling.
-                    mat_idx = {mat_id: i for i, mat_id in
-                               enumerate(transfer_rates.burnable_mats)}
-                    off_diag = {
-                        (mat_idx[dest], mat_idx[src]): t_matrix
-                        for (dest, src), t_matrix in transfer_pair.items()
-                    }
-                    n_result = func.__self__._solve_block(
-                        matrices, off_diag, n, dt, substeps,
-                        max_jacobi_iter=transfer_rates.max_jacobi_iter,
-                        tol=transfer_rates.jacobi_tol)
-                else:
-                    # Monolithic: assemble a single block matrix and solve.
-                    n_rows = n_cols = len(transfer_rates.burnable_mats)
-                    rows = []
-                    for row in range(n_rows):
-                        cols = []
-                        for col in range(n_cols):
-                            mat_pair = (transfer_rates.burnable_mats[row],
-                                        transfer_rates.burnable_mats[col])
-                            if row == col:
-                                cols.append(matrices[row])
-                            elif mat_pair in transfer_rates.index_transfer[
-                                    current_timestep]:
-                                cols.append(transfer_pair[mat_pair])
-                            else:
-                                cols.append(None)
-                        rows.append(cols)
-                    matrix = block_array(rows)
-                    n_multi = np.concatenate(n)
-                    n_result = func(matrix, n_multi, dt, substeps)
-                    n_result = np.split(
-                        n_result, np.cumsum([len(i) for i in n])[:-1])
-
+            # Precompute global-index mapping for MPI allgather.
+            if comm.size > 1:
+                all_local_indices = comm.allgather(local_indices)
+            
+            # Step 0: uncoupled solve for each local material.
+            inputs = zip(matrices, n, repeat(dt), repeat(substeps))
+            if USE_MULTIPROCESSING:
+                with Pool(NUM_PROCESSES) as pool:
+                    x = list(pool.starmap(func, inputs))
             else:
-                n_result = None
+                x = list(starmap(func, inputs))
 
-            # Braodcast result to other ranks
-            n_result = comm.bcast(n_result)
-            # Distribute results across MPI
-            n_result = _distribute(n_result)
+            # Jacobi iterations: re-solve with the coupling from the
+            # previous iterate added as an augmented constant source.
+            for _ in range(transfer_rates.max_jacobi_iter):
+                # Build x_lookup: global_j -> composition from prev iter.
+                if comm.size > 1:
+                    all_x = comm.allgather(x)
+                    x_lookup = {
+                        g: xv
+                        for r_idx, r_x in zip(all_local_indices, all_x)
+                        for g, xv in zip(r_idx, r_x)
+                    }
+                else:
+                    x_lookup = dict(zip(local_indices, x))
 
-            return n_result
+                # Build (matrix, n0, dt, substeps) tuples.  Materials that
+                # receive transfers get an augmented matrix with the coupling
+                # vector appended as an extra column (same pattern as ESR).
+                coupled = []
+                aug_inputs = []
+                for i, (A, ni) in enumerate(zip(matrices, n)):
+                    if recv_from[i]:
+                        coupling = sum(t @ x_lookup[j]
+                                       for j, t in recv_from[i])
+                        A_aug = hstack(
+                            [A, csc_array(coupling.reshape(-1, 1))])
+                        A_aug.resize(A_aug.shape[1], A_aug.shape[1])
+                        aug_inputs.append(
+                            (A_aug, np.append(ni, 1.0), dt, substeps))
+                        coupled.append(True)
+                    else:
+                        aug_inputs.append((A, ni, dt, substeps))
+                        coupled.append(False)
+
+                if USE_MULTIPROCESSING:
+                    with Pool(NUM_PROCESSES) as pool:
+                        x_raw = list(pool.starmap(func, aug_inputs))
+                else:
+                    x_raw = list(starmap(func, aug_inputs))
+
+                # Strip the dummy trailing component from augmented solves.
+                x_new = [xr[:-1] if c else xr
+                         for xr, c in zip(x_raw, coupled)]
+
+                # Convergence: relative change in all receiving materials.
+                local_conv = all(
+                    not recv_from[i] or
+                    np.linalg.norm(x_new[i] - x[i]) <=
+                    transfer_rates.jacobi_tol * np.linalg.norm(x_new[i])
+                    for i in range(len(transfer_rates.local_mats))
+                )
+                if comm.size > 1:
+                    converged = (
+                        sum(comm.allgather(int(not local_conv))) == 0)
+                else:
+                    converged = local_conv
+
+                x = x_new
+                if converged:
+                    break
+
+            # n_result is already local — no bcast/distribute needed.
+            return x           
+
+
+ 
 
     if (external_source_rates is not None and
         current_timestep in external_source_rates.external_timesteps):
